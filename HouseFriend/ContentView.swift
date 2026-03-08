@@ -12,6 +12,7 @@ struct ContentView: View {
     @StateObject private var electricService   = ElectricLinesService()
     @StateObject private var housingService    = SupportiveHousingService()
     @StateObject private var noiseService      = NoiseService()
+    @StateObject private var populationService = PopulationService()
 
     @State private var position = MapCameraPosition.region(
         MKCoordinateRegion(
@@ -28,6 +29,9 @@ struct ContentView: View {
     @State private var pinnedAddress  = ""
     @State private var categories     = NeighborhoodCategory.all
     @State private var isLoadingScores = false
+    @State private var selectedSchool: School?
+    @State private var selectedSuperfund: SuperfundSite?
+    @State private var selectedHousing: SupportiveHousingFacility?
 
     var body: some View {
         ZStack {
@@ -45,14 +49,14 @@ struct ContentView: View {
                 }
             }
 
-            // Right sidebar (above bottom panel)
-            HStack {
-                Spacer()
-                VStack {
-                    sideBar.padding(.top, 110)
+            // Right sidebar (vertically centered, with safe area)
+            VStack {
+                Spacer().frame(height: 110)
+                HStack {
                     Spacer()
-                        .frame(height: pinnedLocation != nil ? 260 : 60)
+                    sideBar
                 }
+                Spacer().frame(height: pinnedLocation != nil ? 260 : 60)
             }
 
             // Zoom + location buttons (bottom-right, above panel)
@@ -78,6 +82,9 @@ struct ContentView: View {
             locationService.requestPermission()
             loadAllData(coord: currentCenter)
         }
+        .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
+        .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
+        .sheet(item: $selectedHousing) { f in HousingDetailSheet(facility: f) }
     }
 
     // MARK: - Map
@@ -126,6 +133,7 @@ struct ContentView: View {
                 ForEach(schoolService.schools) { school in
                     Annotation(school.name, coordinate: school.coordinate) {
                         SchoolMarkerView(school: school)
+                            .onTapGesture { selectedSchool = school }
                     }
                 }
             }
@@ -133,6 +141,7 @@ struct ContentView: View {
                 ForEach(housingService.facilities) { facility in
                     Annotation(facility.name, coordinate: facility.coordinate) {
                         HousingMarkerView(facility: facility)
+                            .onTapGesture { selectedHousing = facility }
                     }
                 }
             }
@@ -140,6 +149,7 @@ struct ContentView: View {
                 ForEach(superfundService.sites) { site in
                     Annotation(site.name, coordinate: site.coordinate) {
                         SuperfundMarkerView(site: site)
+                            .onTapGesture { selectedSuperfund = site }
                     }
                 }
             }
@@ -154,14 +164,19 @@ struct ContentView: View {
                 }
             }
             if selectedCategory == .fireHazard {
-                MapPolygon(coordinates: fireHighRisk())
-                    .foregroundStyle(Color.red.opacity(0.35)).stroke(Color.red, lineWidth: 1.5)
-                MapPolygon(coordinates: fireMedRisk())
-                    .foregroundStyle(Color.orange.opacity(0.3)).stroke(Color.orange, lineWidth: 1)
+                ForEach(fireService.hazardZones) { zone in
+                    let col = FireDataService.colorForSeverity(zone.severity)
+                    MapPolygon(coordinates: zone.coordinates)
+                        .foregroundStyle(Color(red: col.r, green: col.g, blue: col.b).opacity(col.opacity))
+                        .stroke(Color(red: col.r, green: col.g, blue: col.b), lineWidth: 1.5)
+                }
             }
         }
         .ignoresSafeArea()
-        .onTapGesture { } // allow map tap to propagate
+        .onMapCameraChange { context in
+            currentCenter = context.region.center
+            currentSpan   = context.region.span
+        }
     }
 
     // MARK: - Nav Bar
@@ -228,14 +243,17 @@ struct ContentView: View {
 
     // MARK: - Right Sidebar
     var sideBar: some View {
-        VStack(spacing: 2) {
-            ForEach(NeighborhoodCategory.all) { cat in
-                SidebarButton(category: cat, isSelected: selectedCategory == cat.id) {
-                    selectedCategory = cat.id
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 2) {
+                ForEach(NeighborhoodCategory.all) { cat in
+                    SidebarButton(category: cat, isSelected: selectedCategory == cat.id) {
+                        selectedCategory = cat.id
+                    }
                 }
             }
+            .padding(.vertical, 6)
         }
-        .padding(.vertical, 6)
+        .frame(maxHeight: 420)   // never exceed screen height
         .background(.regularMaterial)
         .cornerRadius(12)
         .shadow(radius: 4)
@@ -393,6 +411,7 @@ struct ContentView: View {
     }
 
     func loadAllData(coord: CLLocationCoordinate2D) {
+        populationService.fetch(lat: coord.latitude, lon: coord.longitude)
         earthquakeService.fetch()
         superfundService.fetchNear(lat: coord.latitude, lon: coord.longitude)
         airQualityService.fetch(lat: coord.latitude, lon: coord.longitude)
@@ -428,17 +447,28 @@ struct ContentView: View {
                     categories[i].scoreLabel = nearby == 0 ? "Clear" : "\(nearby) site(s) nearby"
                 case .milpitasOdor:
                     let aqi = airQualityService.data?.aqi ?? 55
-                    categories[i].score = max(0, 100 - aqi)
+                    let aqiScore = aqi <= 50 ? 95 : aqi <= 100 ? 75 : aqi <= 150 ? 50 : 25
+                    categories[i].score = aqiScore
                     categories[i].scoreLabel = airQualityService.data?.category ?? "Moderate"
                 case .crime:
-                    let cnt = crimeService.incidents.count
-                    let score = max(20, 100 - cnt * 4)
-                    categories[i].score = score
-                    categories[i].scoreLabel = score > 70 ? "Safe" : score > 45 ? "Moderate" : "High Crime"
+                    categories[i].score = crimeService.stats.score
+                    categories[i].scoreLabel = crimeService.stats.label
                 case .fireHazard:
-                    let inHills = coord.latitude < 37.35 && coord.longitude < -122.05
-                    categories[i].score = inHills ? 42 : 74
-                    categories[i].scoreLabel = inHills ? "Moderate Risk" : "Low Risk"
+                    // Check if near identified high-risk hill zones
+                    let inHillArea = (coord.latitude < 37.36 && coord.longitude < -122.02) ||
+                                     (coord.latitude < 37.30 && coord.longitude < -121.96)
+                    let inExtremeZone = coord.latitude < 37.32 && coord.longitude < -122.04 &&
+                                       coord.latitude > 37.25
+                    if inExtremeZone {
+                        categories[i].score = 35
+                        categories[i].scoreLabel = "Very High Risk"
+                    } else if inHillArea {
+                        categories[i].score = 55
+                        categories[i].scoreLabel = "Moderate Risk"
+                    } else {
+                        categories[i].score = 80
+                        categories[i].scoreLabel = "Low Risk"
+                    }
                 case .schools:
                     let nearbySchools = schoolService.schools.filter {
                         abs($0.coordinate.latitude - coord.latitude) < 0.05 &&
@@ -459,8 +489,15 @@ struct ContentView: View {
                     categories[i].score = nearLine != nil ? 60 : 85
                     categories[i].scoreLabel = nearLine != nil ? "Lines nearby" : "Low Exposure"
                 case .population:
-                    categories[i].score = 70
-                    categories[i].scoreLabel = "~35k / sq mi"
+                    if let pop = populationService.info {
+                        let densityScore = max(20, min(95, 100 - (pop.density - 3000) / 120))
+                        categories[i].score = densityScore
+                        let densityK = String(format: "%.1f", Double(pop.density) / 1000.0)
+                        categories[i].scoreLabel = "\(densityK)k/sq mi · \(pop.cityName)"
+                    } else {
+                        categories[i].score = 70
+                        categories[i].scoreLabel = "~5k / sq mi"
+                    }
                 case .supportiveHome:
                     let cnt = housingService.facilities.filter {
                         abs($0.coordinate.latitude - coord.latitude) < 0.05 &&
@@ -543,16 +580,6 @@ struct ContentView: View {
     }
     func electricColor(_ v: Int) -> Color {
         v >= 115 ? .purple : v >= 60 ? Color(red:0.7,green:0.1,blue:0.8) : Color(red:0.85,green:0.5,blue:0.9)
-    }
-    func fireHighRisk() -> [CLLocationCoordinate2D] {
-        [.init(latitude:37.350,longitude:-122.100),.init(latitude:37.330,longitude:-122.080),
-         .init(latitude:37.305,longitude:-122.060),.init(latitude:37.290,longitude:-122.090),
-         .init(latitude:37.310,longitude:-122.110),.init(latitude:37.340,longitude:-122.120)]
-    }
-    func fireMedRisk() -> [CLLocationCoordinate2D] {
-        [.init(latitude:37.380,longitude:-122.080),.init(latitude:37.355,longitude:-122.060),
-         .init(latitude:37.335,longitude:-122.040),.init(latitude:37.320,longitude:-122.060),
-         .init(latitude:37.340,longitude:-122.090),.init(latitude:37.365,longitude:-122.095)]
     }
 }
 

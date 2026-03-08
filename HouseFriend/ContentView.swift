@@ -1,41 +1,73 @@
 import SwiftUI
 import MapKit
 
+// 1. 定义图层枚举
+enum MapLayer: String, CaseIterable, Identifiable {
+    case fire = "Fire"
+    case earthquake = "Earthquake"
+    case crime = "Crime"
+    case school = "School"
+    case noise = "Noise"
+    case population = "Population"
+    case electric = "Electric Lines"
+    case superfund = "Superfund"
+    case supportive = "Supportive Home"
+    case odor = "Milpitas Odor"
+    
+    var id: String { self.rawValue }
+    var icon: String {
+        switch self {
+        case .fire: return "flame.fill"
+        case .earthquake: return "waveform.path.ecg"
+        case .crime: return "shield.fill"
+        case .school: return "graduationcap.fill"
+        case .noise: return "speaker.wave.3.fill"
+        case .population: return "person.3.fill"
+        case .electric: return "bolt.horizontal.fill"
+        case .superfund: return "pills.fill"
+        case .supportive: return "house.fill"
+        case .odor: return "nose.fill"
+        }
+    }
+}
+
+// 2. 主视图
 struct ContentView: View {
-    // 默认定位到旧金山湾区
-    @State private var region = MKCoordinateRegion(
+    @State private var position: MapCameraPosition = .region(MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
         span: MKCoordinateSpan(latitudeDelta: 0.3, longitudeDelta: 0.3)
-    )
+    ))
     
     @State private var activeLayers: Set<MapLayer> = [.fire, .earthquake]
     @State private var showSettings = false
     
     var body: some View {
         ZStack {
-            // macOS 下的 Map 组件写法略有不同，我们用这种更通用的方式
-            Map(coordinateRegion: , showsUserLocation: true)
-                .edgesIgnoringSafeArea(.all)
+            // 使用 iOS 17+ 推荐的新版 Map 语法
+            Map(position: ) {
+                // 未来在这里添加 Annotation 或 MapPolygon
+            }
+            .edgesIgnoringSafeArea(.all)
             
             VStack {
-                // Header
+                // 顶部标题
                 HStack {
                     Text("🏡 HouseFriend")
                         .font(.title2)
                         .fontWeight(.heavy)
                         .padding()
-                        .background(VisualEffectView(material: .headerView, blendingMode: .withinWindow))
+                        .background(.ultraThinMaterial)
                         .cornerRadius(15)
-                        .shadow(radius: 5)
                     Spacer()
-                    Button(action: { showSettings.toggle() }) {
+                    Button {
+                        showSettings.toggle()
+                    } label: {
                         Image(systemName: "layers.3.fill")
                             .font(.title2)
                             .padding()
                             .background(Color.blue)
                             .foregroundColor(.white)
                             .clipShape(Circle())
-                            .shadow(radius: 5)
                     }
                 }
                 .padding(.horizontal)
@@ -43,15 +75,20 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                // Active Layer Indicators
+                // 底部快捷切换
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
+                    HStack(spacing: 12) {
                         ForEach(MapLayer.allCases) { layer in
-                            Button(action: {
-                                if activeLayers.contains(layer) { activeLayers.remove(layer) }
-                                else { activeLayers.insert(layer) }
-                            }) {
+                            Button {
+                                if activeLayers.contains(layer) {
+                                    activeLayers.remove(layer)
+                                } else {
+                                    activeLayers.insert(layer)
+                                }
+                            } label: {
                                 Label(layer.rawValue, systemImage: layer.icon)
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 12)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(activeLayers.contains(layer) ? layerColor(layer) : .secondary)
@@ -60,7 +97,7 @@ struct ContentView: View {
                     }
                     .padding()
                 }
-                .background(VisualEffectView(material: .contentBackground, blendingMode: .withinWindow))
+                .background(.ultraThinMaterial)
             }
         }
         .sheet(isPresented: ) {
@@ -80,60 +117,42 @@ struct ContentView: View {
     }
 }
 
-// macOS 适配的毛玻璃效果
-struct VisualEffectView: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-    let blendingMode: NSVisualEffectView.BlendingMode
-    
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let visualEffectView = NSVisualEffectView()
-        visualEffectView.material = material
-        visualEffectView.blendingMode = blendingMode
-        visualEffectView.state = .active
-        return visualEffectView
-    }
-    
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
-}
-
+// 3. 设置页面
 struct LayerSettingsView: View {
     @Binding var activeLayers: Set<MapLayer>
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        VStack {
-            HStack {
-                Text("Map Layers")
-                    .font(.headline)
-                Spacer()
-                Button("Done") {
-                    presentationMode.wrappedValue.dismiss()
-                }
-            }
-            .padding()
-            
+        NavigationStack {
             List(MapLayer.allCases) { layer in
-                HStack {
-                    Label(layer.rawValue, systemImage: layer.icon)
-                    Spacer()
+                Button {
                     if activeLayers.contains(layer) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.blue)
+                        activeLayers.remove(layer)
+                    } else {
+                        activeLayers.insert(layer)
+                    }
+                } label: {
+                    HStack {
+                        Label(layer.rawValue, systemImage: layer.icon)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        if activeLayers.contains(layer) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.blue)
+                        }
                     }
                 }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if activeLayers.contains(layer) { activeLayers.remove(layer) }
-                    else { activeLayers.insert(layer) }
+            }
+            .navigationTitle("Map Layers")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
         }
-        .frame(width: 300, height: 400)
     }
 }
 
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView()
-    }
+#Preview {
+    ContentView()
 }

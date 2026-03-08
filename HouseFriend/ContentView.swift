@@ -68,14 +68,14 @@ struct ContentView: View {
                     // Legend bottom-left
                     LegendView(category: selectedCategory)
                         .padding(.leading, 12)
-                        .padding(.bottom, pinnedLocation != nil ? 270 : 30)
+                        .padding(.bottom, pinnedLocation != nil ? 310 : 30)
                     Spacer()
                     VStack(spacing: 10) {
                         zoomControls
                         locationButton
                     }
-                    .padding(.trailing, 12)
-                    .padding(.bottom, pinnedLocation != nil ? 270 : 30)
+                    .padding(.trailing, 6)
+                    .padding(.bottom, pinnedLocation != nil ? 310 : 30)
                 }
             }
         }
@@ -94,8 +94,15 @@ struct ContentView: View {
         Map(position: $position) {
             if let loc = pinnedLocation {
                 Annotation("", coordinate: loc) {
-                    Image(systemName: "mappin.circle.fill")
-                        .font(.title).foregroundColor(.red).shadow(radius: 2)
+                    VStack(spacing: 2) {
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.title).foregroundColor(.red).shadow(radius: 2)
+                        Text("Analysis Point")
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(.regularMaterial)
+                            .cornerRadius(6)
+                    }
                 }
             }
             UserAnnotation()
@@ -186,6 +193,23 @@ struct ContentView: View {
             currentCenter = context.region.center
             currentSpan   = context.region.span
         }
+        .onLongPressGesture(minimumDuration: 0.5) {
+            // Drop pin at current map center (long-press center)
+            let coord = currentCenter
+            pinnedLocation = coord
+            pinnedAddress = String(format: "%.4f, %.4f", coord.latitude, coord.longitude)
+            // Reverse geocode
+            let geocoder = CLGeocoder()
+            let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+            geocoder.reverseGeocodeLocation(loc) { placemarks, _ in
+                if let p = placemarks?.first {
+                    let parts = [p.name, p.thoroughfare, p.locality].compactMap { $0 }
+                    pinnedAddress = parts.joined(separator: ", ")
+                }
+            }
+            loadAllData(coord: coord)
+            computeScores(coord: coord)
+        }
     }
 
     // MARK: - Nav Bar
@@ -198,9 +222,20 @@ struct ContentView: View {
                 Text("HouseFriend")
                     .font(.headline).fontWeight(.bold)
                 Spacer()
-                Text(selectedCategory.rawValue)
-                    .font(.subheadline).foregroundColor(.secondary)
-                    .padding(.trailing, 16)
+                // Active layer chip
+                HStack(spacing: 5) {
+                    let cat = NeighborhoodCategory.all.first { $0.id == selectedCategory }
+                    Image(systemName: cat?.icon ?? "map")
+                        .font(.caption)
+                        .foregroundColor(cat?.color ?? .blue)
+                    Text(selectedCategory.rawValue)
+                        .font(.caption).fontWeight(.semibold)
+                        .foregroundColor(cat?.color ?? .blue)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background((NeighborhoodCategory.all.first { $0.id == selectedCategory }?.color ?? .blue).opacity(0.12))
+                .cornerRadius(20)
+                .padding(.trailing, 10)
             }
         }
         .frame(height: 50)
@@ -262,26 +297,34 @@ struct ContentView: View {
             }
             .padding(.vertical, 6)
         }
-        .frame(maxHeight: 400)   // never exceed screen height
+        .frame(maxHeight: 460)   // never exceed screen height
         .background(.regularMaterial)
         .cornerRadius(12)
         .shadow(radius: 4)
-        .padding(.trailing, 8)
+        .padding(.trailing, 6)
     }
 
     // MARK: - Empty State
     var emptyStateHint: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass.circle.fill")
-                .font(.title2)
-                .foregroundColor(.blue)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Search any address")
-                    .font(.subheadline).fontWeight(.semibold)
-                Text("Get a full neighborhood safety report")
-                    .font(.caption).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass.circle.fill")
+                    .font(.title2).foregroundColor(.blue)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Search any address")
+                        .font(.subheadline).fontWeight(.semibold)
+                    Text("Get a full neighborhood safety report")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
             }
-            Spacer()
+            HStack(spacing: 10) {
+                Image(systemName: "hand.tap.fill")
+                    .font(.title2).foregroundColor(.purple)
+                Text("Or long-press anywhere on the map to analyze that location")
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -323,7 +366,7 @@ struct ContentView: View {
             if isLoadingScores {
                 HStack {
                     Spacer()
-                    ProgressView("Analyzing...")
+                    ProgressView("Analyzing neighborhood...")
                         .padding()
                     Spacer()
                 }
@@ -338,6 +381,13 @@ struct ContentView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                 }
+
+                // Category-specific detail list
+                if let pinnedCoord = pinnedLocation {
+                    categoryDetailSection(for: selectedCategory, coord: pinnedCoord)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 20)
+                }
             }
         }
         .background(.regularMaterial)
@@ -345,19 +395,223 @@ struct ContentView: View {
         .shadow(color: .black.opacity(0.12), radius: 10, y: -4)
     }
 
+    // MARK: - Category Detail Section
+    @ViewBuilder
+    func categoryDetailSection(for cat: CategoryType, coord: CLLocationCoordinate2D) -> some View {
+        switch cat {
+        case .schools:
+            let nearby = schoolService.schools.filter {
+                abs($0.coordinate.latitude - coord.latitude) < 0.05 &&
+                abs($0.coordinate.longitude - coord.longitude) < 0.06
+            }.sorted {
+                pow($0.coordinate.latitude-coord.latitude,2)+pow($0.coordinate.longitude-coord.longitude,2) <
+                pow($1.coordinate.latitude-coord.latitude,2)+pow($1.coordinate.longitude-coord.longitude,2)
+            }
+            if !nearby.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Nearest Schools").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(nearby.count) total").font(.caption).foregroundColor(.secondary)
+                    }
+                    .padding(.bottom, 6)
+                    ForEach(nearby.prefix(5)) { school in
+                        Button { selectedSchool = school } label: {
+                            HStack(spacing: 10) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(school.level == .elementary ? Color.green :
+                                              school.level == .middle ? Color.blue : Color(red:0.4,green:0,blue:0.7))
+                                        .frame(width: 22, height: 22)
+                                    Text(school.level.rawValue).font(.system(size: 10, weight: .bold)).foregroundColor(.white)
+                                }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(school.name).font(.caption).foregroundColor(.primary).lineLimit(1)
+                                    Text(school.district).font(.system(size: 9)).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                HStack(spacing: 2) {
+                                    ForEach(0..<5) { j in
+                                        Image(systemName: j < school.rating/2 ? "star.fill" : "star")
+                                            .font(.system(size: 8))
+                                            .foregroundColor(.orange)
+                                    }
+                                    Text("\(school.rating)/10").font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(school.rating >= 8 ? .green : school.rating >= 6 ? .orange : .red)
+                                }
+                                Image(systemName: "chevron.right").font(.caption2).foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 6)
+                        }
+                        if school.id != nearby.prefix(5).last?.id { Divider() }
+                    }
+                }
+                .padding(12)
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(12)
+            }
+
+        case .superfund:
+            let nearby = superfundService.sites.prefix(5)
+            if !nearby.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Nearby EPA Superfund Sites").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(superfundService.sites.count) found").font(.caption).foregroundColor(.secondary)
+                    }
+                    .padding(.bottom, 6)
+                    ForEach(Array(nearby)) { site in
+                        Button { selectedSuperfund = site } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "flask.fill")
+                                    .foregroundColor(site.distanceMiles.map { $0 < 1 ? Color.red : $0 < 3 ? Color.orange : Color.green } ?? .orange)
+                                    .frame(width: 22)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(site.name).font(.caption).foregroundColor(.primary).lineLimit(1)
+                                    Text(site.contaminants).font(.system(size: 9)).foregroundColor(.secondary).lineLimit(1)
+                                }
+                                Spacer()
+                                if let d = site.distanceMiles {
+                                    Text(String(format: "%.1f mi", d))
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(d < 1 ? .red : d < 3 ? .orange : .green)
+                                }
+                                Image(systemName: "chevron.right").font(.caption2).foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 6)
+                        }
+                        if site.id != nearby.last?.id { Divider() }
+                    }
+                }
+                .padding(12)
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(12)
+            }
+
+        case .earthquake:
+            let recent = earthquakeService.events.sorted { $0.magnitude > $1.magnitude }.prefix(5)
+            if !recent.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Recent Earthquakes (Bay Area)").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                        .padding(.bottom, 6)
+                    ForEach(Array(recent)) { event in
+                        HStack(spacing: 10) {
+                            ZStack {
+                                Circle()
+                                    .fill(event.magnitude >= 5.0 ? Color.red :
+                                          event.magnitude >= 4.0 ? Color.orange : Color.yellow)
+                                    .frame(width: 28, height: 28)
+                                Text(String(format: "%.1f", event.magnitude))
+                                    .font(.system(size: 9, weight: .bold)).foregroundColor(.white)
+                            }
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(event.place).font(.caption).foregroundColor(.primary).lineLimit(1)
+                                Text(event.magnitude >= 5.0 ? "Strong" : event.magnitude >= 4.0 ? "Moderate" : "Minor")
+                                    .font(.system(size: 9)).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Text("M\(String(format: "%.1f", event.magnitude))")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(event.magnitude >= 5.0 ? .red : event.magnitude >= 4.0 ? .orange : .primary)
+                        }
+                        .padding(.vertical, 5)
+                        if event.id != recent.last?.id { Divider() }
+                    }
+                }
+                .padding(12)
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(12)
+            }
+
+        case .fireHazard:
+            let zones = fireService.hazardZones
+            if !zones.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("CAL FIRE Hazard Zones Nearby").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                        .padding(.bottom, 6)
+                    ForEach(zones) { zone in
+                        HStack(spacing: 10) {
+                            Image(systemName: "flame.fill")
+                                .foregroundColor(zone.severity == "Extreme" ? .red : zone.severity == "Very High" ? .orange : Color(red:1,green:0.65,blue:0))
+                                .frame(width: 22)
+                            Text(zone.name).font(.caption).foregroundColor(.primary).lineLimit(1)
+                            Spacer()
+                            Text(zone.severity)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(zone.severity == "Extreme" ? .red : zone.severity == "Very High" ? .orange : Color(red:1,green:0.65,blue:0))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background((zone.severity == "Extreme" ? Color.red : zone.severity == "Very High" ? Color.orange : Color.yellow).opacity(0.15))
+                                .cornerRadius(5)
+                        }
+                        .padding(.vertical, 5)
+                        if zone.id != zones.last?.id { Divider() }
+                    }
+                }
+                .padding(12)
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(12)
+            }
+
+        case .supportiveHome:
+            let nearby = housingService.facilities.filter {
+                abs($0.coordinate.latitude - coord.latitude) < 0.05 &&
+                abs($0.coordinate.longitude - coord.longitude) < 0.06
+            }
+            if !nearby.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Supportive Housing Nearby").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(nearby.count) facilities").font(.caption).foregroundColor(.secondary)
+                    }
+                    .padding(.bottom, 6)
+                    ForEach(nearby.prefix(4)) { facility in
+                        Button { selectedHousing = facility } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "house.fill")
+                                    .foregroundColor(Color(red:0.4,green:0.2,blue:0.6))
+                                    .frame(width: 22)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(facility.name.replacingOccurrences(of: "\n", with: " "))
+                                        .font(.caption).foregroundColor(.primary).lineLimit(1)
+                                    Text(facility.type).font(.system(size: 9)).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption2).foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 6)
+                        }
+                        if facility.id != nearby.prefix(4).last?.id { Divider() }
+                    }
+                }
+                .padding(12)
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(12)
+            }
+
+        default:
+            EmptyView()
+        }
+    }
+
     var overallScoreBadge: some View {
         let scores = categories.compactMap(\.score)
         let avg = scores.isEmpty ? 0 : scores.reduce(0, +) / scores.count
-        return VStack(spacing: 0) {
-            Text("\(avg)")
-                .font(.title2).fontWeight(.bold)
+        let grade = avg >= 80 ? "A" : avg >= 70 ? "B" : avg >= 60 ? "C" : avg >= 40 ? "D" : "F"
+        return VStack(spacing: 2) {
+            Text(grade)
+                .font(.system(size: 22, weight: .bold))
                 .foregroundColor(scoreColor(avg))
-            Text("/ 100")
-                .font(.system(size: 10)).foregroundColor(.secondary)
+            Text("\(avg)/100")
+                .font(.system(size: 10, weight: .semibold)).foregroundColor(.secondary)
+            Text("Safety Score")
+                .font(.system(size: 8)).foregroundColor(.secondary)
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(scoreColor(avg).opacity(0.12))
-        .cornerRadius(10)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(scoreColor(avg).opacity(0.10))
+        .cornerRadius(12)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(scoreColor(avg).opacity(0.3), lineWidth: 1))
     }
 
     // MARK: - Controls
@@ -471,12 +725,19 @@ struct ContentView: View {
                     categories[i].score = max(20, 100 - nearby * 12)
                     categories[i].scoreLabel = nearby == 0 ? "Low Risk" : nearby < 3 ? "Some Activity" : "High Activity"
                 case .superfund:
-                    let nearby = superfundService.sites.filter {
+                    let nearbySites = superfundService.sites.filter {
                         abs($0.coordinate.latitude - coord.latitude) < 0.12 &&
                         abs($0.coordinate.longitude - coord.longitude) < 0.15
-                    }.count
-                    categories[i].score = max(10, 100 - nearby * 28)
-                    categories[i].scoreLabel = nearby == 0 ? "Clear" : "\(nearby) site(s) nearby"
+                    }.sorted { ($0.distanceMiles ?? 99) < ($1.distanceMiles ?? 99) }
+                    let sfScore = max(10, 100 - nearbySites.count * 22)
+                    categories[i].score = sfScore
+                    if nearbySites.isEmpty {
+                        categories[i].scoreLabel = "No EPA sites nearby"
+                    } else if let closest = nearbySites.first, let dist = closest.distanceMiles {
+                        categories[i].scoreLabel = "\(nearbySites.count) sites · closest \(String(format:"%.1f",dist))mi"
+                    } else {
+                        categories[i].scoreLabel = "\(nearbySites.count) EPA site(s) nearby"
+                    }
                 case .milpitasOdor:
                     let aqi = airQualityService.data?.aqi ?? 55
                     let aqiScore = aqi <= 50 ? 95 : aqi <= 100 ? 75 : aqi <= 150 ? 50 : 25
@@ -486,40 +747,119 @@ struct ContentView: View {
                     categories[i].score = crimeService.stats.score
                     categories[i].scoreLabel = crimeService.stats.label
                 case .fireHazard:
-                    // Check if near identified high-risk hill zones
-                    let inHillArea = (coord.latitude < 37.36 && coord.longitude < -122.02) ||
-                                     (coord.latitude < 37.30 && coord.longitude < -121.96)
-                    let inExtremeZone = coord.latitude < 37.32 && coord.longitude < -122.04 &&
-                                       coord.latitude > 37.25
-                    if inExtremeZone {
-                        categories[i].score = 35
-                        categories[i].scoreLabel = "Very High Risk"
-                    } else if inHillArea {
-                        categories[i].score = 55
-                        categories[i].scoreLabel = "Moderate Risk"
-                    } else {
-                        categories[i].score = 80
-                        categories[i].scoreLabel = "Low Risk"
+                    // Find nearest fire hazard zone using point-in-polygon or proximity
+                    var worstSeverity = "None"
+                    var minDist = Double.infinity
+                    for zone in fireService.hazardZones {
+                        // Check proximity to zone polygon vertices
+                        for pt in zone.coordinates {
+                            let d = sqrt(pow(pt.latitude - coord.latitude, 2) + pow(pt.longitude - coord.longitude, 2))
+                            if d < minDist {
+                                minDist = d
+                                worstSeverity = zone.severity
+                            }
+                        }
                     }
+                    // Also check point-in-polygon for each zone
+                    for zone in fireService.hazardZones {
+                        if pointInPolygon(coord, polygon: zone.coordinates) {
+                            worstSeverity = zone.severity
+                            minDist = 0
+                            break
+                        }
+                    }
+                    let fireScore: Int
+                    let fireLabel: String
+                    switch worstSeverity {
+                    case "Extreme":
+                        fireScore = 25; fireLabel = "Extreme Fire Risk"
+                    case "Very High":
+                        fireScore = minDist < 0.05 ? 40 : 55; fireLabel = "Very High Fire Risk"
+                    case "High":
+                        fireScore = minDist < 0.05 ? 60 : 72; fireLabel = "High Fire Risk"
+                    default:
+                        fireScore = 88; fireLabel = "Low Fire Risk"
+                    }
+                    categories[i].score = fireScore
+                    categories[i].scoreLabel = fireLabel
                 case .schools:
                     let nearbySchools = schoolService.schools.filter {
                         abs($0.coordinate.latitude - coord.latitude) < 0.05 &&
                         abs($0.coordinate.longitude - coord.longitude) < 0.06
+                    }.sorted {
+                        let d0 = pow($0.coordinate.latitude-coord.latitude,2)+pow($0.coordinate.longitude-coord.longitude,2)
+                        let d1 = pow($1.coordinate.latitude-coord.latitude,2)+pow($1.coordinate.longitude-coord.longitude,2)
+                        return d0 < d1
                     }
-                    let avgRating = nearbySchools.isEmpty ? 7 :
-                        nearbySchools.map(\.rating).reduce(0, +) / nearbySchools.count
-                    categories[i].score = avgRating * 10
-                    categories[i].scoreLabel = "\(nearbySchools.count) schools nearby"
+                    let avgRating = nearbySchools.isEmpty ? 6 :
+                        nearbySchools.map(\.rating).reduce(0,+) / nearbySchools.count
+                    let schoolScore = min(100, avgRating * 10 + (nearbySchools.count > 5 ? 5 : 0))
+                    categories[i].score = schoolScore
+                    if let top = nearbySchools.first {
+                        categories[i].scoreLabel = "\(nearbySchools.count) schools · avg \(avgRating)/10"
+                    } else {
+                        categories[i].scoreLabel = "No schools found nearby"
+                    }
                 case .noise:
-                    let nearHighway = abs(coord.latitude - 37.355) < 0.03 // near 101/280
-                    categories[i].score = nearHighway ? 52 : 72
-                    categories[i].scoreLabel = nearHighway ? "Moderate (~65dB)" : "Quiet (~52dB)"
-                case .electricLines:
-                    let nearLine = electricService.lines.first {
-                        $0.coordinates.contains { abs($0.latitude - coord.latitude) < 0.02 }
+                    // Find loudest noise zone containing or nearest to coordinate
+                    var loudestDb = 40
+                    for zone in noiseService.zones {
+                        if pointInPolygon(coord, polygon: zone.polygon) {
+                            if zone.dbLevel > loudestDb { loudestDb = zone.dbLevel }
+                        }
                     }
-                    categories[i].score = nearLine != nil ? 60 : 85
-                    categories[i].scoreLabel = nearLine != nil ? "Lines nearby" : "Low Exposure"
+                    // If not inside any zone, find nearest zone
+                    if loudestDb == 40 {
+                        var nearestDist = Double.infinity
+                        for zone in noiseService.zones {
+                            for pt in zone.polygon {
+                                let d = sqrt(pow(pt.latitude - coord.latitude, 2) + pow(pt.longitude - coord.longitude, 2))
+                                if d < nearestDist { nearestDist = d; loudestDb = max(loudestDb, zone.dbLevel - Int(nearestDist * 500)) }
+                            }
+                        }
+                    }
+                    let noiseScore = max(10, 100 - max(0, loudestDb - 40) * 2)
+                    let noiseLabel: String
+                    switch loudestDb {
+                    case 75...: noiseLabel = "Very Loud (>\(loudestDb)dB)"
+                    case 65...: noiseLabel = "Loud (~\(loudestDb)dB)"
+                    case 55...: noiseLabel = "Moderate (~\(loudestDb)dB)"
+                    default:    noiseLabel = "Quiet (<55dB)"
+                    }
+                    categories[i].score = noiseScore
+                    categories[i].scoreLabel = noiseLabel
+                case .electricLines:
+                    // Find minimum distance to any transmission line segment
+                    var minLineDistDeg = Double.infinity
+                    var closestVoltage = 0
+                    for line in electricService.lines {
+                        let coords = line.coordinates
+                        for j in 0..<max(0, coords.count-1) {
+                            let p1 = coords[j]; let p2 = coords[j+1]
+                            let dx = p2.longitude - p1.longitude
+                            let dy = p2.latitude  - p1.latitude
+                            let lenSq = dx*dx + dy*dy
+                            let t = lenSq > 0 ? max(0, min(1, ((coord.longitude-p1.longitude)*dx + (coord.latitude-p1.latitude)*dy)/lenSq)) : 0
+                            let nearLat = p1.latitude + t*dy
+                            let nearLon = p1.longitude + t*dx
+                            let d = sqrt(pow(coord.latitude-nearLat,2) + pow(coord.longitude-nearLon,2))
+                            if d < minLineDistDeg { minLineDistDeg = d; closestVoltage = line.voltage }
+                        }
+                    }
+                    let distMilesElec = minLineDistDeg * 69.0
+                    let elecScore: Int
+                    let elecLabel: String
+                    if distMilesElec < 0.1 {
+                        elecScore = 45; elecLabel = "Very Close (\(closestVoltage)kV line)"
+                    } else if distMilesElec < 0.3 {
+                        elecScore = 62; elecLabel = "Nearby (\(closestVoltage)kV, \(String(format:"%.1f",distMilesElec))mi)"
+                    } else if distMilesElec < 1.0 {
+                        elecScore = 78; elecLabel = "\(String(format:"%.1f",distMilesElec))mi to nearest line"
+                    } else {
+                        elecScore = 92; elecLabel = "Low Exposure (>\(Int(distMilesElec))mi)"
+                    }
+                    categories[i].score = elecScore
+                    categories[i].scoreLabel = elecLabel
                 case .population:
                     if let pop = populationService.info {
                         let densityScore = max(20, min(95, 100 - (pop.density - 3000) / 120))
@@ -541,6 +881,24 @@ struct ContentView: View {
             }
             isLoadingScores = false
         }
+    }
+
+    // MARK: - Geometry Helpers
+    /// Ray-casting point-in-polygon test
+    func pointInPolygon(_ point: CLLocationCoordinate2D, polygon: [CLLocationCoordinate2D]) -> Bool {
+        guard polygon.count >= 3 else { return false }
+        var inside = false
+        var j = polygon.count - 1
+        for i in 0..<polygon.count {
+            let xi = polygon[i].longitude; let yi = polygon[i].latitude
+            let xj = polygon[j].longitude; let yj = polygon[j].latitude
+            if ((yi > point.latitude) != (yj > point.latitude)) &&
+               (point.longitude < (xj - xi) * (point.latitude - yi) / (yj - yi) + xi) {
+                inside = !inside
+            }
+            j = i
+        }
+        return inside
     }
 
     // MARK: - Zone Data
@@ -660,7 +1018,10 @@ struct ScoreCardView: View {
                         .frame(width: 68)
                 }
             } else {
-                ProgressView().scaleEffect(0.55).frame(height: 14)
+                ProgressView()
+                    .scaleEffect(0.55)
+                    .frame(height: 16)
+                    .padding(.top, 4)
             }
         }
         .padding(.vertical, 10).padding(.horizontal, 5)
@@ -688,11 +1049,30 @@ struct SidebarButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: category.icon)
-                .font(.system(size: 16))
-                .foregroundColor(isSelected ? .white : category.color)
-                .frame(width: 38, height: 38)
-                .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? category.color : Color.clear))
+            VStack(spacing: 2) {
+                Image(systemName: category.icon)
+                    .font(.system(size: 15))
+                    .foregroundColor(isSelected ? .white : category.color)
+                    .frame(width: 34, height: 24)
+                Text(shortName(category.name))
+                    .font(.system(size: 8, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? .white : .secondary)
+                    .lineLimit(1)
+                    .frame(width: 48)
+            }
+            .frame(width: 52, height: 46)
+            .background(RoundedRectangle(cornerRadius: 9).fill(isSelected ? category.color : Color.clear))
+        }
+    }
+
+    func shortName(_ name: String) -> String {
+        switch name {
+        case "Air Quality / Odor": return "Air"
+        case "Supportive Housing": return "Housing"
+        case "Electric Lines":     return "Electric"
+        case "Fire Hazard":        return "Fire"
+        case "Population":         return "Population"
+        default:                   return name
         }
     }
 }

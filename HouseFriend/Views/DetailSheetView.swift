@@ -21,9 +21,10 @@ struct SchoolDetailSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                Section("Ratings") {
+                Section("Ratings & Info") {
                     ratingRow("GreatSchools Rating", value: "\(school.rating)/10", color: ratingColor(school.rating))
                     ratingRow("Grade Level", value: school.level.fullName, color: .blue)
+                    ratingRow("School District", value: school.district, color: .secondary)
                 }
 
                 Section("Location") {
@@ -92,27 +93,47 @@ struct SuperfundDetailSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                Section("Details") {
-                    infoRow("Status", value: site.status, icon: "info.circle")
+                Section("Site Details") {
+                    infoRow("Status", value: site.status, icon: "info.circle", valueColor: statusColor)
+                    infoRow("Risk Level", value: riskLabel, icon: "exclamationmark.triangle.fill", valueColor: severityColor)
                     if let dist = site.distanceMiles {
-                        infoRow("Distance", value: String(format: "%.1f miles from pin", dist), icon: "ruler")
+                        infoRow("Distance", value: String(format: "%.1f mi from pin", dist), icon: "ruler", valueColor: severityColor)
                     }
-                    infoRow("Risk Level", value: riskLabel, icon: "exclamationmark.triangle")
+                }
+
+                Section("Primary Contaminants") {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "atom")
+                            .foregroundColor(.orange)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(site.contaminants.components(separatedBy: ","), id: \.self) { c in
+                                HStack(spacing: 6) {
+                                    Image(systemName: "circle.fill")
+                                        .font(.system(size: 5))
+                                        .foregroundColor(.orange)
+                                    Text(c.trimmingCharacters(in: .whitespaces))
+                                        .font(.subheadline)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
 
                 Section("About Superfund Sites") {
-                    Text("EPA Superfund sites are locations contaminated with hazardous substances. The EPA works to clean up these sites to protect human health and the environment.")
+                    Text("EPA Superfund sites are locations contaminated with hazardous substances that pose risks to public health or the environment. The EPA's National Priorities List (NPL) identifies sites requiring long-term cleanup action.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
 
                 Section {
                     Button {
-                        if let url = URL(string: "https://www.epa.gov/superfund") {
-                            UIApplication.shared.open(url)
-                        }
+                        let query = site.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                        let url = URL(string: "https://www.epa.gov/superfund/search-superfund-sites-where-you-live#results?query=\(query)") ?? URL(string: "https://www.epa.gov/superfund")!
+                        UIApplication.shared.open(url)
                     } label: {
-                        Label("View EPA Superfund Info", systemImage: "globe")
+                        Label("Search on EPA Superfund", systemImage: "globe")
                     }
                 }
             }
@@ -127,16 +148,26 @@ struct SuperfundDetailSheet: View {
         return d < 1 ? .red : d < 3 ? .orange : .green
     }
 
+    var statusColor: Color {
+        switch site.status {
+        case "NPL":      return .red
+        case "Proposed": return .orange
+        case "Deleted":  return .green
+        case "Active":   return .orange
+        default:         return .secondary
+        }
+    }
+
     var riskLabel: String {
         guard let d = site.distanceMiles else { return "Unknown" }
         return d < 1 ? "High — Very Close" : d < 3 ? "Moderate" : "Low — Far Away"
     }
 
-    func infoRow(_ label: String, value: String, icon: String) -> some View {
+    func infoRow(_ label: String, value: String, icon: String, valueColor: Color = .secondary) -> some View {
         HStack {
             Label(label, systemImage: icon).foregroundColor(.primary)
             Spacer()
-            Text(value).foregroundColor(.secondary).font(.subheadline)
+            Text(value).foregroundColor(valueColor).font(.subheadline).fontWeight(.medium)
         }
     }
 }
@@ -167,8 +198,23 @@ struct HousingDetailSheet: View {
                     HStack {
                         Label("Type", systemImage: "house.and.flag")
                         Spacer()
-                        Text(facility.type).foregroundColor(.secondary)
+                        Text(facility.type)
+                            .foregroundColor(typeColor)
+                            .fontWeight(.medium)
                     }
+                    if let cap = facility.capacity {
+                        HStack {
+                            Label("Capacity", systemImage: "person.3.fill")
+                            Spacer()
+                            Text("~\(cap) beds/units").foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                Section("About") {
+                    Text(typeDescription)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 Section {
@@ -185,6 +231,28 @@ struct HousingDetailSheet: View {
             .navigationTitle("Supportive Housing")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    var typeColor: Color {
+        switch facility.type {
+        case "Shelter":      return .red
+        case "Transitional": return .orange
+        case "Permanent":    return .green
+        default:             return .secondary
+        }
+    }
+
+    var typeDescription: String {
+        switch facility.type {
+        case "Shelter":
+            return "Emergency shelters provide immediate, short-term housing for people experiencing homelessness. Services typically include meals, case management, and referrals."
+        case "Transitional":
+            return "Transitional housing provides temporary housing (typically 6-24 months) with support services to help residents move toward permanent housing."
+        case "Permanent":
+            return "Permanent supportive housing provides long-term affordable housing combined with support services for individuals and families with special needs."
+        default:
+            return "This facility provides housing support services for community members in need."
         }
     }
 }

@@ -139,17 +139,8 @@ struct ContentView: View {
         .ignoresSafeArea()
         .onAppear {
             locationService.requestPermission()
-            // Load bay-area-wide data on launch
-            noiseService.fetch()
-            fireService.fetchFireData()
-            earthquakeService.fetch()
-            electricService.fetch()
-            housingService.fetch()
-            // Pre-compute crime grid on background thread (avoids UI jank)
-            DispatchQueue.global(qos: .userInitiated).async {
-                let zones = crimeMapZones()
-                DispatchQueue.main.async { cachedCrimeZones = zones }
-            }
+            // Lazy load: only load the default layer (crime) on launch
+            loadLayerIfNeeded(.crime)
         }
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
@@ -411,9 +402,7 @@ struct ContentView: View {
                 ForEach(NeighborhoodCategory.all) { cat in
                     SidebarButton(category: cat, isSelected: selectedCategory == cat.id) {
                         selectedCategory = cat.id
-                        if cat.id == .noise {
-                            noiseService.fetchForRegion(MKCoordinateRegion(center: currentCenter, span: currentSpan))
-                        }
+                        loadLayerIfNeeded(cat.id)
                     }
                 }
             }
@@ -499,9 +488,7 @@ struct ContentView: View {
                             ScoreCardView(category: $cat, isSelected: selectedCategory == cat.id)
                                 .onTapGesture {
                                     selectedCategory = cat.id
-                                    if cat.id == .noise {
-                                        noiseService.fetchForRegion(MKCoordinateRegion(center: currentCenter, span: currentSpan))
-                                    }
+                                    loadLayerIfNeeded(cat.id)
                                 }
                         }
                     }
@@ -780,6 +767,45 @@ struct ContentView: View {
     }
 
     // MARK: - Zoom
+    /// Lazy loader — only fetches data when a layer is first activated
+    func loadLayerIfNeeded(_ layer: CategoryType) {
+        switch layer {
+        case .crime:
+            if cachedCrimeZones == nil {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let zones = crimeMapZones()
+                    DispatchQueue.main.async { self.cachedCrimeZones = zones }
+                }
+            }
+        case .noise:
+            // Noise always re-fetches based on viewport (Overpass API)
+            noiseService.fetchForRegion(MKCoordinateRegion(center: currentCenter, span: currentSpan))
+        case .earthquake:
+            if earthquakeService.events.isEmpty {
+                earthquakeService.fetch()
+            }
+        case .fireHazard:
+            if fireService.hazardZones.isEmpty {
+                fireService.fetchFireData()
+            }
+        case .electricLines:
+            if electricService.lines.isEmpty {
+                electricService.fetch()
+            }
+        case .supportiveHome:
+            if housingService.facilities.isEmpty {
+                housingService.fetch()
+            }
+        case .milpitasOdor:
+            if airQualityService.data == nil {
+                airQualityService.fetch(lat: currentCenter.latitude, lon: currentCenter.longitude)
+            }
+        default:
+            // Schools, Superfund, Population: hardcoded, always available
+            break
+        }
+    }
+
     func refreshCrimeIncidents() {
         guard currentSpan.latitudeDelta < 0.08 else { crimeIncidents = []; return }
         // Generate mock crime incidents around the visible area

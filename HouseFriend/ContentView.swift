@@ -25,6 +25,10 @@ struct ContentView: View {
     @State private var searchResults: [MKMapItem] = []
     @StateObject private var searchCompleter = SearchCompleterService()
     @State private var isSearchFocused = false
+    // Population / ZIP layer
+    @State private var zipRegions: [ZIPCodeRegion] = ZIPCodeData.allZIPs()
+    @State private var selectedZIP: ZIPCodeRegion?
+    @State private var showZIPSheet = false
     @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.85, longitudeDelta: 0.85)
     @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.650, longitude: -122.150)
     @State private var pinnedLocation: CLLocationCoordinate2D?
@@ -145,6 +149,13 @@ struct ContentView: View {
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
         .sheet(item: $selectedHousing) { f in HousingDetailSheet(facility: f) }
+        .sheet(isPresented: $showZIPSheet) {
+            if let zip = selectedZIP {
+                ZIPDemographicsSheet(region: zip)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
     }
 
     // MARK: - Map

@@ -73,7 +73,7 @@
 | 7 | ⚡ Electric Lines 电力线 | MapPolyline | 硬编码 PG&E 输电走廊 | ⚠️ 仅主干 |
 | 8 | 🏠 Supportive Housing 保障房 | MapAnnotation 图钉 | 硬编码 | ⚠️ 覆盖偏少 |
 | 9 | 💨 Air Quality/Odor 空气/气味 | MapPolygon | Open-Meteo API + 硬编码工业区 | ✅ |
-| 10 | 👥 Population 人口 | MapAnnotation 文字 | 硬编码 65 城市人口密度 | ✅ |
+| 10 | 👥 Population 人口 | ZIP 区号多边形 + 点击高亮 + 人口统计滑动面板 | 硬编码 2020 Census ZIP 数据 | 🔄 重构中 |
 
 ---
 
@@ -227,6 +227,41 @@ HouseFriend/
 ## 9. 功能效果规格（Feature Spec）
 
 > 本章描述每个功能的**预期视觉效果、交互行为、数据呈现方式**，作为开发和验收的标准。
+
+---
+
+### 9.0 Population 人口图层（重点功能）
+
+**视觉效果**
+- 地图上显示各 ZIP Code 区号标签（如「94301」），字体 caption，灰色，随缩放显示/隐藏
+- 每个 ZIP 区域用细边框多边形勾勒出边界（边框颜色浅灰，填充透明）
+- 未选中状态：多边形透明，只显示 ZIP 号码标签
+
+**点击交互**
+- 点击某个 ZIP 区域 → 该区域高亮（填充浅蓝色半透明）
+- 同时从底部弹出人口统计滑动面板（可上下拖拽展开/收起）
+
+**人口统计滑动面板（Demographics Sheet）包含 3 部分：**
+
+1. **人种分布（Race / Ethnicity）**
+   - 横向堆叠色条（Stacked Bar），全宽 = 100%
+   - 颜色：White=蓝、Hispanic=橙、Asian=绿、Black=紫、Other=灰
+   - 每段显示百分比数字
+   - 下方图例说明各颜色对应人种
+
+2. **家庭收入分布（Household Income）**
+   - 纵向柱状图，6 个收入区间：<$25k / $25-50k / $50-75k / $75-100k / $100-150k / $150k+
+   - 柱子颜色：低收入→红，中收入→橙，高收入→绿
+   - 每柱显示百分比
+   - 底部显示该 ZIP 的中位家庭收入（Median Household Income）
+
+3. **年龄分布（Age Distribution）**
+   - 横向条形图，5 个年龄组：0-17 / 18-34 / 35-54 / 55-64 / 65+
+   - 统一蓝色系，颜色深浅区分年龄段
+   - 每条显示百分比和人口数（估算）
+   - 底部显示中位年龄（Median Age）
+
+**数据来源**：2020 US Census（硬编码约 40 个主要湾区 ZIP Code）
 
 ---
 

@@ -31,6 +31,9 @@ struct ContentView: View {
     @State private var pinnedAddress  = ""
     @State private var categories     = NeighborhoodCategory.all
     @State private var isLoadingScores = false
+    @State private var cachedCrimeZones: [MapZone]? = nil
+    @State private var showCrimeDetails = false
+    @State private var crimeIncidents: [CrimeMarker] = []
     @State private var selectedSchool: School?
     @State private var selectedSuperfund: SuperfundSite?
     @State private var selectedHousing: SupportiveHousingFacility?
@@ -58,7 +61,29 @@ struct ContentView: View {
                 Spacer().frame(height: 110)
                 HStack(alignment: .center) {
                     Spacer()
-                    sideBar
+                    VStack(alignment: .trailing, spacing: 8) {
+                        // Details toggle (crime layer only)
+                        if selectedCategory == .crime {
+                            HStack(spacing: 8) {
+                                Text("Details")
+                                    .font(.subheadline).fontWeight(.medium)
+                                Toggle("", isOn: $showCrimeDetails)
+                                    .labelsHidden()
+                                    .toggleStyle(.switch)
+                                    .tint(.blue)
+                                    .scaleEffect(0.85)
+                                    .onChange(of: showCrimeDetails) { _, on in
+                                        if on { refreshCrimeIncidents() }
+                                        else { crimeIncidents = [] }
+                                    }
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(.regularMaterial)
+                            .cornerRadius(12)
+                            .shadow(color: .black.opacity(0.12), radius: 4)
+                        }
+                        sideBar
+                    }
                 }
                 Spacer().frame(height: pinnedLocation != nil ? 280 : 120)
             }
@@ -112,6 +137,11 @@ struct ContentView: View {
             earthquakeService.fetch()
             electricService.fetch()
             housingService.fetch()
+            // Pre-compute crime grid on background thread (avoids UI jank)
+            DispatchQueue.global(qos: .userInitiated).async {
+                let zones = crimeMapZones()
+                DispatchQueue.main.async { cachedCrimeZones = zones }
+            }
         }
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
@@ -145,10 +175,19 @@ struct ContentView: View {
                 }
             }
             if selectedCategory == .crime {
-                ForEach(crimeMapZones()) { zone in
+                // Full-coverage choropleth — every cell colored by crime level
+                ForEach(cachedCrimeZones ?? []) { zone in
                     MapPolygon(coordinates: zone.coordinates)
-                        .foregroundStyle(crimeColor(zone.value).opacity(0.45))
-                        .stroke(crimeColor(zone.value), lineWidth: 0.5)
+                        .foregroundStyle(crimeColor(zone.value).opacity(0.55))
+                        .stroke(.clear, lineWidth: 0)
+                }
+                // Details mode: individual incident markers (zoom in to see)
+                if showCrimeDetails && currentSpan.latitudeDelta < 0.08 {
+                    ForEach(crimeIncidents) { incident in
+                        Annotation("", coordinate: incident.coordinate) {
+                            CrimeMarkerView(marker: incident)
+                        }
+                    }
                 }
             }
             if selectedCategory == .milpitasOdor {
@@ -218,9 +257,11 @@ struct ContentView: View {
         .onMapCameraChange { context in
             currentCenter = context.region.center
             currentSpan   = context.region.span
-            // Live-fetch roads for noise layer as user pans/zooms
             if selectedCategory == .noise {
                 noiseService.fetchForRegion(context.region)
+            }
+            if selectedCategory == .crime && showCrimeDetails {
+                refreshCrimeIncidents()
             }
         }
         .onLongPressGesture(minimumDuration: 0.5) {
@@ -739,6 +780,52 @@ struct ContentView: View {
     }
 
     // MARK: - Zoom
+    func refreshCrimeIncidents() {
+        guard currentSpan.latitudeDelta < 0.08 else { crimeIncidents = []; return }
+        // Generate mock crime incidents around the visible area
+        let lat = currentCenter.latitude
+        let lon = currentCenter.longitude
+        let spread = currentSpan.latitudeDelta * 0.45
+        let types: [CrimeType] = [.violent, .property, .vehicle, .vandalism, .other]
+        var incidents: [CrimeMarker] = []
+        // Get crime density for this area
+        let baseValue = crimeValueAt(lat: lat, lon: lon)
+        let count = Int(baseValue * 25) + 3  // more incidents in high-crime areas
+        for _ in 0..<count {
+            let rLat = lat + Double.random(in: -spread...spread)
+            let rLon = lon + Double.random(in: -spread...spread)
+            let localVal = crimeValueAt(lat: rLat, lon: rLon)
+            let type_ = localVal > 0.6
+                ? (Bool.random() ? CrimeType.violent : CrimeType.property)
+                : types.randomElement()!
+            let days = Int.random(in: 1...30)
+            incidents.append(CrimeMarker(
+                coordinate: CLLocationCoordinate2D(latitude: rLat, longitude: rLon),
+                type: type_,
+                count: Int.random(in: 1...max(1, Int(localVal * 8))),
+                daysAgo: days
+            ))
+        }
+        crimeIncidents = incidents
+    }
+
+    func crimeValueAt(lat: Double, lon: Double) -> Double {
+        let hotspots: [(Double, Double, Double, Double)] = [
+            (37.812, -122.285, 1.00, 2.5), (37.928, -122.362, 0.95, 2.0),
+            (37.782, -122.415, 0.90, 1.8), (37.770, -122.220, 0.88, 2.5),
+            (37.105, -122.255, 0.82, 2.0), (37.343, -121.875, 0.82, 3.0),
+            (37.727, -122.390, 0.80, 2.0), (37.998, -121.808, 0.78, 2.0),
+            (37.670, -122.082, 0.72, 2.0), (37.338, -121.888, 0.68, 2.5),
+        ]
+        let mpLat = 69.0, mpLon = 53.0
+        var v = 0.15
+        for h in hotspots {
+            let d2 = pow((lat-h.0)*mpLat, 2) + pow((lon-h.1)*mpLon, 2)
+            v += h.2 * exp(-d2/(h.3*h.3))
+        }
+        return max(0.10, min(1.0, v))
+    }
+
     func zoom(in zoomIn: Bool) {
         let factor: Double = zoomIn ? 0.5 : 2.0
         currentSpan = MKCoordinateSpan(
@@ -1005,204 +1092,137 @@ struct ContentView: View {
 
     // MARK: - Zone Data
     func crimeMapZones() -> [MapZone] {
-        [
-            // ─── HIGH CRIME ZONES ────────────────────────────────────────────
-            // East San Jose (highest crime in SCC)
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.360, longitude: -121.910),
-                CLLocationCoordinate2D(latitude: 37.340, longitude: -121.880),
-                CLLocationCoordinate2D(latitude: 37.320, longitude: -121.870),
-                CLLocationCoordinate2D(latitude: 37.315, longitude: -121.840),
-                CLLocationCoordinate2D(latitude: 37.335, longitude: -121.830),
-                CLLocationCoordinate2D(latitude: 37.360, longitude: -121.860),
-                CLLocationCoordinate2D(latitude: 37.375, longitude: -121.895),
-            ], value: 0.88),
-            // Downtown Oakland / West Oakland
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.830, longitude: -122.310),
-                CLLocationCoordinate2D(latitude: 37.812, longitude: -122.285),
-                CLLocationCoordinate2D(latitude: 37.798, longitude: -122.268),
-                CLLocationCoordinate2D(latitude: 37.792, longitude: -122.280),
-                CLLocationCoordinate2D(latitude: 37.800, longitude: -122.300),
-                CLLocationCoordinate2D(latitude: 37.815, longitude: -122.318),
-                CLLocationCoordinate2D(latitude: 37.828, longitude: -122.322),
-            ], value: 0.92),
-            // East Oakland (Fruitvale / San Antonio)
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.778, longitude: -122.228),
-                CLLocationCoordinate2D(latitude: 37.762, longitude: -122.215),
-                CLLocationCoordinate2D(latitude: 37.748, longitude: -122.218),
-                CLLocationCoordinate2D(latitude: 37.745, longitude: -122.235),
-                CLLocationCoordinate2D(latitude: 37.755, longitude: -122.248),
-                CLLocationCoordinate2D(latitude: 37.772, longitude: -122.245),
-            ], value: 0.85),
-            // Richmond (Iron Triangle)
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.942, longitude: -122.372),
-                CLLocationCoordinate2D(latitude: 37.928, longitude: -122.355),
-                CLLocationCoordinate2D(latitude: 37.918, longitude: -122.358),
-                CLLocationCoordinate2D(latitude: 37.915, longitude: -122.375),
-                CLLocationCoordinate2D(latitude: 37.925, longitude: -122.390),
-                CLLocationCoordinate2D(latitude: 37.938, longitude: -122.388),
-            ], value: 0.90),
-            // SF Tenderloin / SoMa
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.785, longitude: -122.418),
-                CLLocationCoordinate2D(latitude: 37.778, longitude: -122.408),
-                CLLocationCoordinate2D(latitude: 37.772, longitude: -122.412),
-                CLLocationCoordinate2D(latitude: 37.775, longitude: -122.425),
-                CLLocationCoordinate2D(latitude: 37.782, longitude: -122.430),
-            ], value: 0.88),
-            // SF Mission / Bayview
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.758, longitude: -122.418),
-                CLLocationCoordinate2D(latitude: 37.742, longitude: -122.405),
-                CLLocationCoordinate2D(latitude: 37.732, longitude: -122.395),
-                CLLocationCoordinate2D(latitude: 37.728, longitude: -122.408),
-                CLLocationCoordinate2D(latitude: 37.738, longitude: -122.425),
-                CLLocationCoordinate2D(latitude: 37.752, longitude: -122.428),
-            ], value: 0.78),
-            // Antioch / Pittsburg
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 38.012, longitude: -121.832),
-                CLLocationCoordinate2D(latitude: 37.998, longitude: -121.815),
-                CLLocationCoordinate2D(latitude: 37.988, longitude: -121.820),
-                CLLocationCoordinate2D(latitude: 37.985, longitude: -121.840),
-                CLLocationCoordinate2D(latitude: 37.995, longitude: -121.855),
-                CLLocationCoordinate2D(latitude: 38.008, longitude: -121.850),
-            ], value: 0.75),
-            // Hayward East
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.678, longitude: -122.090),
-                CLLocationCoordinate2D(latitude: 37.662, longitude: -122.075),
-                CLLocationCoordinate2D(latitude: 37.648, longitude: -122.078),
-                CLLocationCoordinate2D(latitude: 37.648, longitude: -122.098),
-                CLLocationCoordinate2D(latitude: 37.662, longitude: -122.108),
-                CLLocationCoordinate2D(latitude: 37.676, longitude: -122.105),
-            ], value: 0.72),
+        // Full Bay Area grid — every cell gets a crime value via Gaussian decay
+        // Distance computed in MILES for realistic neighborhood-scale hotspots
+        let cellSize = 0.055  // ~3.8 miles per cell
+        let minLat = 37.08, maxLat = 38.60
+        let minLon = -123.05, maxLon = -121.38
 
-            // ─── MODERATE CRIME ZONES ─────────────────────────────────────────
-            // Central San Jose / Downtown
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.400, longitude: -121.970),
-                CLLocationCoordinate2D(latitude: 37.385, longitude: -121.960),
-                CLLocationCoordinate2D(latitude: 37.370, longitude: -121.950),
-                CLLocationCoordinate2D(latitude: 37.360, longitude: -121.965),
-                CLLocationCoordinate2D(latitude: 37.375, longitude: -121.980),
-                CLLocationCoordinate2D(latitude: 37.395, longitude: -121.988),
-            ], value: 0.50),
-            // North Oakland / Temescal
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.842, longitude: -122.272),
-                CLLocationCoordinate2D(latitude: 37.832, longitude: -122.262),
-                CLLocationCoordinate2D(latitude: 37.822, longitude: -122.265),
-                CLLocationCoordinate2D(latitude: 37.820, longitude: -122.278),
-                CLLocationCoordinate2D(latitude: 37.830, longitude: -122.288),
-                CLLocationCoordinate2D(latitude: 37.840, longitude: -122.285),
-            ], value: 0.52),
-            // San Jose North (Willow Glen area)
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.325, longitude: -121.925),
-                CLLocationCoordinate2D(latitude: 37.308, longitude: -121.912),
-                CLLocationCoordinate2D(latitude: 37.295, longitude: -121.918),
-                CLLocationCoordinate2D(latitude: 37.298, longitude: -121.938),
-                CLLocationCoordinate2D(latitude: 37.312, longitude: -121.948),
-                CLLocationCoordinate2D(latitude: 37.325, longitude: -121.942),
-            ], value: 0.45),
-            // Concord / Central CC
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.985, longitude: -122.052),
-                CLLocationCoordinate2D(latitude: 37.972, longitude: -122.038),
-                CLLocationCoordinate2D(latitude: 37.960, longitude: -122.042),
-                CLLocationCoordinate2D(latitude: 37.958, longitude: -122.062),
-                CLLocationCoordinate2D(latitude: 37.970, longitude: -122.075),
-                CLLocationCoordinate2D(latitude: 37.982, longitude: -122.070),
-            ], value: 0.48),
-            // San Rafael
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.978, longitude: -122.538),
-                CLLocationCoordinate2D(latitude: 37.965, longitude: -122.525),
-                CLLocationCoordinate2D(latitude: 37.958, longitude: -122.530),
-                CLLocationCoordinate2D(latitude: 37.960, longitude: -122.548),
-                CLLocationCoordinate2D(latitude: 37.972, longitude: -122.555),
-            ], value: 0.42),
-
-            // ─── LOW CRIME ZONES ──────────────────────────────────────────────
-            // Cupertino / Sunnyvale (very safe)
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.360, longitude: -122.060),
-                CLLocationCoordinate2D(latitude: 37.330, longitude: -122.040),
-                CLLocationCoordinate2D(latitude: 37.310, longitude: -122.020),
-                CLLocationCoordinate2D(latitude: 37.300, longitude: -122.050),
-                CLLocationCoordinate2D(latitude: 37.325, longitude: -122.075),
-                CLLocationCoordinate2D(latitude: 37.355, longitude: -122.080),
-            ], value: 0.10),
-            // Saratoga / Los Gatos
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.288, longitude: -122.048),
-                CLLocationCoordinate2D(latitude: 37.268, longitude: -122.028),
-                CLLocationCoordinate2D(latitude: 37.252, longitude: -122.015),
-                CLLocationCoordinate2D(latitude: 37.248, longitude: -122.038),
-                CLLocationCoordinate2D(latitude: 37.260, longitude: -122.058),
-                CLLocationCoordinate2D(latitude: 37.278, longitude: -122.065),
-            ], value: 0.08),
-            // Palo Alto / Menlo Park
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.458, longitude: -122.178),
-                CLLocationCoordinate2D(latitude: 37.438, longitude: -122.158),
-                CLLocationCoordinate2D(latitude: 37.418, longitude: -122.148),
-                CLLocationCoordinate2D(latitude: 37.410, longitude: -122.168),
-                CLLocationCoordinate2D(latitude: 37.425, longitude: -122.188),
-                CLLocationCoordinate2D(latitude: 37.448, longitude: -122.195),
-            ], value: 0.10),
-            // Marin (Mill Valley / Tiburon)
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.912, longitude: -122.558),
-                CLLocationCoordinate2D(latitude: 37.895, longitude: -122.538),
-                CLLocationCoordinate2D(latitude: 37.882, longitude: -122.542),
-                CLLocationCoordinate2D(latitude: 37.882, longitude: -122.562),
-                CLLocationCoordinate2D(latitude: 37.895, longitude: -122.572),
-                CLLocationCoordinate2D(latitude: 37.910, longitude: -122.570),
-            ], value: 0.08),
-            // Piedmont / Oakland Hills
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.832, longitude: -122.242),
-                CLLocationCoordinate2D(latitude: 37.820, longitude: -122.228),
-                CLLocationCoordinate2D(latitude: 37.812, longitude: -122.235),
-                CLLocationCoordinate2D(latitude: 37.812, longitude: -122.252),
-                CLLocationCoordinate2D(latitude: 37.822, longitude: -122.262),
-                CLLocationCoordinate2D(latitude: 37.830, longitude: -122.258),
-            ], value: 0.12),
-            // Orinda / Moraga / Lafayette
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.892, longitude: -122.188),
-                CLLocationCoordinate2D(latitude: 37.872, longitude: -122.165),
-                CLLocationCoordinate2D(latitude: 37.855, longitude: -122.158),
-                CLLocationCoordinate2D(latitude: 37.848, longitude: -122.178),
-                CLLocationCoordinate2D(latitude: 37.860, longitude: -122.205),
-                CLLocationCoordinate2D(latitude: 37.878, longitude: -122.212),
-            ], value: 0.10),
-            // Dublin / Pleasanton / San Ramon (Tri-Valley safe suburbs)
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.722, longitude: -121.958),
-                CLLocationCoordinate2D(latitude: 37.698, longitude: -121.935),
-                CLLocationCoordinate2D(latitude: 37.668, longitude: -121.898),
-                CLLocationCoordinate2D(latitude: 37.658, longitude: -121.920),
-                CLLocationCoordinate2D(latitude: 37.672, longitude: -121.952),
-                CLLocationCoordinate2D(latitude: 37.698, longitude: -121.968),
-                CLLocationCoordinate2D(latitude: 37.718, longitude: -121.978),
-            ], value: 0.12),
-            // SF Pacific Heights / Marina / Noe Valley
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.800, longitude: -122.442),
-                CLLocationCoordinate2D(latitude: 37.792, longitude: -122.428),
-                CLLocationCoordinate2D(latitude: 37.782, longitude: -122.432),
-                CLLocationCoordinate2D(latitude: 37.782, longitude: -122.448),
-                CLLocationCoordinate2D(latitude: 37.790, longitude: -122.458),
-                CLLocationCoordinate2D(latitude: 37.798, longitude: -122.455),
-            ], value: 0.18),
+        // (lat, lon, intensity 0-1, radius in miles)
+        // radius = half-decay distance
+        let hotspots: [(Double, Double, Double, Double)] = [
+            // ── Extreme ──────────────────────────────────────────────────────
+            (37.812, -122.285, 1.00, 2.5),  // West Oakland
+            (37.928, -122.362, 0.95, 2.0),  // Richmond Iron Triangle
+            (37.782, -122.415, 0.90, 1.8),  // SF Tenderloin/SoMa
+            // ── Very High ────────────────────────────────────────────────────
+            (37.770, -122.220, 0.88, 2.5),  // East Oakland / Fruitvale
+            (37.105, -122.255, 0.82, 2.0),  // Vallejo downtown
+            (37.343, -121.875, 0.82, 3.0),  // East San Jose
+            (37.727, -122.390, 0.80, 2.0),  // SF Bayview/Hunters Point
+            (37.998, -121.808, 0.78, 2.0),  // Antioch downtown
+            // ── High ─────────────────────────────────────────────────────────
+            (37.670, -122.082, 0.72, 2.0),  // Hayward central
+            (37.962, -122.343, 0.70, 1.8),  // San Pablo
+            (37.338, -121.888, 0.68, 2.5),  // Downtown San Jose
+            (38.021, -121.878, 0.65, 1.8),  // Pittsburg
+            (37.748, -122.198, 0.62, 2.0),  // San Leandro flatlands
+            (37.758, -122.415, 0.60, 1.8),  // SF Mission District
+            // ── Moderate ─────────────────────────────────────────────────────
+            (37.538, -121.975, 0.50, 2.5),  // Fremont central
+            (37.985, -122.058, 0.48, 2.0),  // Concord central
+            (37.976, -122.518, 0.45, 1.8),  // San Rafael downtown
+            (37.270, -121.868, 0.45, 2.5),  // South SJ
+            (37.630, -121.888, 0.45, 2.0),  // Union City
+            (37.432, -121.902, 0.42, 2.0),  // Milpitas central
+            (37.668, -122.088, 0.42, 1.5),  // Hayward East
+            (37.723, -122.150, 0.40, 1.8),  // San Leandro hills
+            (37.892, -122.298, 0.42, 1.5),  // Emeryville
+            // ── Low-Moderate ─────────────────────────────────────────────────
+            (37.372, -122.038, 0.30, 2.0),  // Sunnyvale central
+            (37.378, -121.988, 0.28, 2.0),  // Santa Clara
+            (37.550, -122.052, 0.28, 1.5),  // Newark
+            (37.698, -121.918, 0.32, 2.0),  // Livermore central
+            (37.698, -122.469, 0.32, 1.8),  // Daly City
         ]
+
+        // Safe zones — suburban/wealthy areas with very low crime
+        // (lat, lon, suppression 0-1, radius in miles)
+        let safeZones: [(Double, Double, Double, Double)] = [
+            (37.322, -122.040, 0.55, 4.0),  // Cupertino
+            (37.265, -122.030, 0.60, 3.5),  // Saratoga
+            (37.230, -121.968, 0.55, 3.5),  // Los Gatos
+            (37.440, -122.165, 0.65, 4.5),  // Palo Alto
+            (37.378, -122.100, 0.60, 3.5),  // Los Altos
+            (37.863, -122.248, 0.60, 2.5),  // Piedmont
+            (37.882, -122.165, 0.65, 4.0),  // Orinda / Moraga
+            (37.862, -122.135, 0.60, 3.5),  // Moraga
+            (37.775, -122.252, 0.50, 3.0),  // Oakland Hills
+            (37.822, -121.978, 0.62, 4.0),  // San Ramon
+            (37.662, -121.878, 0.62, 3.5),  // Pleasanton
+            (37.702, -121.932, 0.62, 3.5),  // Dublin
+            (37.895, -122.512, 0.65, 5.0),  // Mill Valley / Marin affluent
+            (37.891, -122.510, 0.65, 3.0),  // Tiburon
+            (37.568, -122.320, 0.50, 4.0),  // San Mateo west
+            (37.485, -122.228, 0.55, 4.0),  // Redwood City hills
+            (37.928, -122.108, 0.52, 4.0),  // Walnut Creek / Lafayette
+            (37.328, -122.075, 0.48, 3.5),  // Monte Sereno / Los Gatos
+            (37.253, -121.815, 0.40, 3.0),  // Evergreen SJ
+            (37.908, -122.062, 0.48, 3.0),  // Walnut Creek east
+        ]
+
+        let milesPerDegreeLat = 69.0
+        let milesPerDegreeLon = 53.0  // at 37.5°N
+
+        var zones: [MapZone] = []
+        var lat = minLat
+        while lat < maxLat {
+            var lon = minLon
+            while lon < maxLon {
+                let clat = lat + cellSize / 2
+                let clon = lon + cellSize / 2
+
+                // (no land mask - render all cells for full coverage)
+
+                // Sum hotspot contributions using miles-based Gaussian
+                var crimeLevel = 0.15  // base — ensures all areas have visible color
+                for h in hotspots {
+                    let dlat = (clat - h.0) * milesPerDegreeLat
+                    let dlon = (clon - h.1) * milesPerDegreeLon
+                    let distMiles = sqrt(dlat*dlat + dlon*dlon)
+                    let r = h.3
+                    crimeLevel += h.2 * exp(-(distMiles*distMiles) / (r*r))
+                }
+
+                // Apply safe zone suppressions
+                for s in safeZones {
+                    let dlat = (clat - s.0) * milesPerDegreeLat
+                    let dlon = (clon - s.1) * milesPerDegreeLon
+                    let distMiles = sqrt(dlat*dlat + dlon*dlon)
+                    let r = s.3
+                    crimeLevel -= s.2 * exp(-(distMiles*distMiles) / (r*r))
+                }
+
+                crimeLevel = max(0.10, min(1.0, crimeLevel))
+
+                let coords = [
+                    CLLocationCoordinate2D(latitude: lat,            longitude: lon),
+                    CLLocationCoordinate2D(latitude: lat,            longitude: lon + cellSize),
+                    CLLocationCoordinate2D(latitude: lat + cellSize, longitude: lon + cellSize),
+                    CLLocationCoordinate2D(latitude: lat + cellSize, longitude: lon),
+                ]
+                zones.append(MapZone(coordinates: coords, value: crimeLevel))
+                lon += cellSize
+            }
+            lat += cellSize
+        }
+        return zones
     }
+
+    /// Rough land mask — exclude open water cells
+    func isLandCell(lat: Double, lon: Double) -> Bool {
+        // Pacific Ocean (west of Bay Area coast)
+        if lon < -122.55 && lat < 37.70 { return false }
+        if lon < -122.65 && lat < 37.85 { return false }
+        if lon < -122.75 { return false }
+        // Deep SF Bay water only (narrow central channel)
+        if lat > 37.60 && lat < 37.80 && lon > -122.30 && lon < -122.15 { return false }
+        // San Pablo Bay deep water
+        if lat > 37.96 && lat < 38.08 && lon > -122.42 && lon < -122.25 { return false }
+        return true
+    }
+
+    /// Rough land mask — skip cells that are mostly ocean/bay water
 
     func odorMapZones() -> [MapZone] {
         [
@@ -1281,7 +1301,15 @@ struct ContentView: View {
         ]
     }
 
-    func crimeColor(_ v: Double) -> Color { Color(red: min(1, v*1.2), green: max(0, 0.4-v*0.4), blue: 0) }
+    func crimeColor(_ v: Double) -> Color {
+        // Reference app palette: deep red → orange → amber → light amber (all opaque)
+        if v >= 0.72 { return Color(red: 0.75, green: 0.05, blue: 0.05) }  // deep red
+        if v >= 0.55 { return Color(red: 0.92, green: 0.25, blue: 0.08) }  // red-orange
+        if v >= 0.40 { return Color(red: 0.98, green: 0.52, blue: 0.15) }  // orange
+        if v >= 0.28 { return Color(red: 0.99, green: 0.72, blue: 0.35) }  // amber
+        if v >= 0.18 { return Color(red: 0.99, green: 0.86, blue: 0.60) }  // light amber
+        return Color(red: 1.00, green: 0.93, blue: 0.78)                    // very light amber
+    }
     func odorColor(_ l: Int) -> Color {
         switch l {
         case 3: return Color(red: 1, green: 0.5, blue: 0.1)

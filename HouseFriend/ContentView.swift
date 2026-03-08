@@ -92,11 +92,14 @@ struct ContentView: View {
             UserAnnotation()
 
             if selectedCategory == .noise {
-                ForEach(noiseService.zones) { zone in
-                    let (r, g, b) = NoiseService.color(for: zone.dbLevel)
-                    MapPolygon(coordinates: zone.polygon)
-                        .foregroundStyle(Color(red: r, green: g, blue: b).opacity(0.55))
-                        .stroke(Color(red: r, green: g, blue: b), lineWidth: 1)
+                // Concentric circles per highway source point → smoke/haze gradient
+                ForEach(noiseService.rings) { ring in
+                    let (r, g, b) = NoiseService.color(for: ring.dbLevel)
+                    // Larger rings = lower opacity (fade effect)
+                    let opacity = max(0.04, 0.38 - (ring.radiusMeters / 2200.0) * 0.34)
+                    MapCircle(center: ring.center, radius: ring.radiusMeters)
+                        .foregroundStyle(Color(red: r, green: g, blue: b).opacity(opacity))
+                        .stroke(.clear, lineWidth: 0)
                 }
             }
             if selectedCategory == .crime {

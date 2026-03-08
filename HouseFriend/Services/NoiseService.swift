@@ -1,95 +1,92 @@
 import Foundation
 import MapKit
 
+struct NoiseRing: Identifiable {
+    let id = UUID()
+    let center: CLLocationCoordinate2D
+    let radiusMeters: Double
+    let dbLevel: Int
+}
+
 struct NoiseZone: Identifiable {
     let id = UUID()
     let polygon: [CLLocationCoordinate2D]
-    let dbLevel: Int   // e.g. 75 means 70-80 dB range
+    let dbLevel: Int
 }
 
 class NoiseService: ObservableObject {
-    @Published var zones: [NoiseZone] = []
+    @Published var rings: [NoiseRing] = []
+    @Published var zones: [NoiseZone] = []   // kept for legacy
 
     func fetch() {
-        // Noise zones based on DOT/FAA highway noise model for Bay Area
-        // Highway corridors: 101, 280, 85, 237 -- generate approximate buffered polygons
-        zones = Self.mockZones()
+        rings = Self.generateRings()
     }
 
-    // dB -> SwiftUI color
+    // dB -> RGBA color (matches screenshot: yellow→orange→red→purple)
     static func color(for db: Int) -> (r: Double, g: Double, b: Double) {
         switch db {
-        case ..<50:  return (1.0, 1.0, 0.4)  // light yellow
-        case 50..<55: return (1.0, 0.9, 0.1) // yellow
-        case 55..<60: return (1.0, 0.7, 0.0) // amber
-        case 60..<65: return (1.0, 0.45, 0.0) // orange
-        case 65..<70: return (0.9, 0.1, 0.3) // red-orange
-        case 70..<80: return (0.6, 0.0, 0.7) // purple
-        default:     return (0.3, 0.0, 0.5)  // dark purple (>80)
+        case ..<50:    return (1.0, 1.0, 0.4)
+        case 50..<55:  return (1.0, 0.92, 0.1)
+        case 55..<60:  return (1.0, 0.72, 0.0)
+        case 60..<65:  return (1.0, 0.45, 0.0)
+        case 65..<70:  return (0.92, 0.1,  0.3)
+        case 70..<80:  return (0.60, 0.0,  0.72)
+        default:       return (0.28, 0.0,  0.50)   // > 80 dB
         }
     }
 
-    static func mockZones() -> [NoiseZone] {
-        var result: [NoiseZone] = []
+    /// Generate concentric noise rings along highway corridors.
+    /// Each highway segment contributes ~8 rings at increasing distances,
+    /// so they blend into a smooth smoke/haze gradient.
+    static func generateRings() -> [NoiseRing] {
+        var result: [NoiseRing] = []
 
-        // Hwy 101 corridor (very high noise >70dB near road, decreasing outward)
-        // San Jose / Santa Clara stretch
-        let hwy101 = [
-            CLLocationCoordinate2D(latitude: 37.415, longitude: -121.940),
-            CLLocationCoordinate2D(latitude: 37.380, longitude: -121.900),
-            CLLocationCoordinate2D(latitude: 37.350, longitude: -121.870),
-            CLLocationCoordinate2D(latitude: 37.320, longitude: -121.850),
-            CLLocationCoordinate2D(latitude: 37.320, longitude: -121.820),
-            CLLocationCoordinate2D(latitude: 37.350, longitude: -121.840),
-            CLLocationCoordinate2D(latitude: 37.380, longitude: -121.870),
-            CLLocationCoordinate2D(latitude: 37.415, longitude: -121.910),
+        // (center point, peak dB at center)
+        let sources: [(CLLocationCoordinate2D, Int)] = [
+            // US-101 SJ / Santa Clara
+            (CLLocationCoordinate2D(latitude: 37.415, longitude: -121.942), 78),
+            (CLLocationCoordinate2D(latitude: 37.393, longitude: -121.916), 78),
+            (CLLocationCoordinate2D(latitude: 37.368, longitude: -121.893), 77),
+            (CLLocationCoordinate2D(latitude: 37.345, longitude: -121.873), 76),
+            (CLLocationCoordinate2D(latitude: 37.322, longitude: -121.852), 75),
+            // I-280
+            (CLLocationCoordinate2D(latitude: 37.418, longitude: -122.088), 75),
+            (CLLocationCoordinate2D(latitude: 37.390, longitude: -122.060), 75),
+            (CLLocationCoordinate2D(latitude: 37.360, longitude: -122.032), 74),
+            (CLLocationCoordinate2D(latitude: 37.330, longitude: -122.005), 73),
+            // SR-237 (Milpitas)
+            (CLLocationCoordinate2D(latitude: 37.428, longitude: -122.002), 72),
+            (CLLocationCoordinate2D(latitude: 37.420, longitude: -121.965), 72),
+            (CLLocationCoordinate2D(latitude: 37.415, longitude: -121.932), 71),
+            // I-880
+            (CLLocationCoordinate2D(latitude: 37.468, longitude: -121.928), 76),
+            (CLLocationCoordinate2D(latitude: 37.445, longitude: -121.921), 76),
+            (CLLocationCoordinate2D(latitude: 37.422, longitude: -121.912), 75),
+            // SR-85
+            (CLLocationCoordinate2D(latitude: 37.340, longitude: -122.024), 72),
+            (CLLocationCoordinate2D(latitude: 37.318, longitude: -122.004), 71),
         ]
-        result.append(NoiseZone(polygon: hwy101, dbLevel: 75))
 
-        // Hwy 280 corridor
-        let hwy280 = [
-            CLLocationCoordinate2D(latitude: 37.420, longitude: -122.090),
-            CLLocationCoordinate2D(latitude: 37.360, longitude: -122.020),
-            CLLocationCoordinate2D(latitude: 37.310, longitude: -121.970),
-            CLLocationCoordinate2D(latitude: 37.310, longitude: -121.940),
-            CLLocationCoordinate2D(latitude: 37.360, longitude: -121.990),
-            CLLocationCoordinate2D(latitude: 37.420, longitude: -122.060),
+        // Ring levels: (distance in meters, dB reduction from center)
+        let ringLevels: [(Double, Int)] = [
+            (80,   0),   // center - darkest
+            (180,  3),
+            (320,  7),
+            (500,  12),
+            (750,  17),
+            (1100, 23),
+            (1600, 30),
+            (2200, 38),  // outermost - nearly transparent
         ]
-        result.append(NoiseZone(polygon: hwy280, dbLevel: 72))
 
-        // Hwy 237 (Milpitas)
-        let hwy237 = [
-            CLLocationCoordinate2D(latitude: 37.430, longitude: -122.000),
-            CLLocationCoordinate2D(latitude: 37.420, longitude: -121.960),
-            CLLocationCoordinate2D(latitude: 37.415, longitude: -121.920),
-            CLLocationCoordinate2D(latitude: 37.405, longitude: -121.920),
-            CLLocationCoordinate2D(latitude: 37.410, longitude: -121.960),
-            CLLocationCoordinate2D(latitude: 37.420, longitude: -121.995),
-        ]
-        result.append(NoiseZone(polygon: hwy237, dbLevel: 68))
-
-        // General urban 55-60 dB background (Santa Clara / Sunnyvale area)
-        let urban1 = [
-            CLLocationCoordinate2D(latitude: 37.420, longitude: -122.060),
-            CLLocationCoordinate2D(latitude: 37.380, longitude: -122.030),
-            CLLocationCoordinate2D(latitude: 37.350, longitude: -122.010),
-            CLLocationCoordinate2D(latitude: 37.340, longitude: -121.970),
-            CLLocationCoordinate2D(latitude: 37.360, longitude: -121.950),
-            CLLocationCoordinate2D(latitude: 37.400, longitude: -121.960),
-            CLLocationCoordinate2D(latitude: 37.430, longitude: -122.000),
-        ]
-        result.append(NoiseZone(polygon: urban1, dbLevel: 57))
-
-        // Quieter suburban 50-55 dB (Cupertino hills area)
-        let quiet1 = [
-            CLLocationCoordinate2D(latitude: 37.335, longitude: -122.050),
-            CLLocationCoordinate2D(latitude: 37.310, longitude: -122.020),
-            CLLocationCoordinate2D(latitude: 37.295, longitude: -122.010),
-            CLLocationCoordinate2D(latitude: 37.290, longitude: -122.040),
-            CLLocationCoordinate2D(latitude: 37.310, longitude: -122.060),
-            CLLocationCoordinate2D(latitude: 37.330, longitude: -122.070),
-        ]
-        result.append(NoiseZone(polygon: quiet1, dbLevel: 52))
+        for (coord, peakDb) in sources {
+            for (radius, reduction) in ringLevels {
+                let db = peakDb - reduction
+                if db >= 45 { // skip rings below ~45 dB (essentially ambient)
+                    result.append(NoiseRing(center: coord, radiusMeters: radius, dbLevel: db))
+                }
+            }
+        }
 
         return result
     }

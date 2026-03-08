@@ -129,6 +129,17 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        .overlay(
+            // Crime heatmap: pixel-level CGImage rendering (smooth, no grid lines)
+            Group {
+                if selectedCategory == .crime {
+                    CrimeHeatmapOverlay(
+                        region: MKCoordinateRegion(center: currentCenter, span: currentSpan)
+                    )
+                    .allowsHitTesting(false)
+                }
+            }
+        )
         .onAppear {
             locationService.requestPermission()
             // Load bay-area-wide data on launch
@@ -174,19 +185,11 @@ struct ContentView: View {
                                 lineWidth: road.lineWidth)
                 }
             }
-            if selectedCategory == .crime {
-                // Full-coverage choropleth — every cell colored by crime level
-                ForEach(cachedCrimeZones ?? []) { zone in
-                    MapPolygon(coordinates: zone.coordinates)
-                        .foregroundStyle(crimeColor(zone.value).opacity(0.55))
-                        .stroke(.clear, lineWidth: 0)
-                }
-                // Details mode: individual incident markers (zoom in to see)
-                if showCrimeDetails && currentSpan.latitudeDelta < 0.08 {
-                    ForEach(crimeIncidents) { incident in
-                        Annotation("", coordinate: incident.coordinate) {
-                            CrimeMarkerView(marker: incident)
-                        }
+            // Details mode: individual incident markers (zoom in to see)
+            if selectedCategory == .crime && showCrimeDetails && currentSpan.latitudeDelta < 0.08 {
+                ForEach(crimeIncidents) { incident in
+                    Annotation("", coordinate: incident.coordinate) {
+                        CrimeMarkerView(marker: incident)
                     }
                 }
             }

@@ -14,11 +14,9 @@ struct ContentView: View {
     @StateObject private var noiseService      = NoiseService()
     @StateObject private var populationService = PopulationService()
 
-    @State private var position = MapCameraPosition.region(
-        MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 37.650, longitude: -122.150),
-            span: MKCoordinateSpan(latitudeDelta: 0.85, longitudeDelta: 0.85)
-        )
+    @State private var mapRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 37.650, longitude: -122.150),
+        span: MKCoordinateSpan(latitudeDelta: 0.85, longitudeDelta: 0.85)
     )
     @State private var selectedCategory: CategoryType = .crime
     @State private var searchText = ""
@@ -35,7 +33,6 @@ struct ContentView: View {
     @State private var pinnedAddress  = ""
     @State private var categories     = NeighborhoodCategory.all
     @State private var isLoadingScores = false
-    @State private var cachedCrimeZones: [MapZone]? = nil
     @State private var showCrimeDetails = false
     @State private var crimeIncidents: [CrimeMarker] = []
     @State private var selectedSchool: School?
@@ -45,14 +42,6 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             mapLayer
-            // Crime heatmap — pixel-rendered, sits above map but below all UI
-            if selectedCategory == .crime {
-                CrimeHeatmapOverlay(
-                    region: MKCoordinateRegion(center: currentCenter, span: currentSpan)
-                )
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-            }
 
             // Top: NavBar + Search
             VStack(spacing: 0) {
@@ -158,131 +147,47 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Map
+    // MARK: - Map (HFMapView — UIKit MKMapView for full overlay control)
     var mapLayer: some View {
-        Map(position: $position) {
-            if let loc = pinnedLocation {
-                Annotation("", coordinate: loc) {
-                    VStack(spacing: 2) {
-                        Image(systemName: "mappin.circle.fill")
-                            .font(.title).foregroundColor(.red).shadow(radius: 2)
-                        Text("Analysis Point")
-                            .font(.system(size: 9, weight: .medium))
-                            .padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(.regularMaterial)
-                            .cornerRadius(6)
-                    }
+        HFMapView(
+            region: $mapRegion,
+            selectedCategory: selectedCategory,
+            showCrimeDetails: showCrimeDetails,
+            pinnedLocation: pinnedLocation,
+            noiseRoads: noiseService.roads,
+            earthquakes: earthquakeService.events,
+            schools: schoolService.schools,
+            superfundSites: superfundService.sites,
+            housingFacilities: housingService.facilities,
+            fireZones: fireService.hazardZones,
+            electricLines: electricService.lines,
+            odorZones: odorMapZones(),
+            zipRegions: zipRegions,
+            crimeMarkers: crimeIncidents,
+            onCameraChange: { region in
+                currentCenter = region.center
+                currentSpan   = region.span
+                mapRegion     = region
+                if selectedCategory == .noise {
+                    noiseService.fetchForRegion(region)
                 }
-            }
-            UserAnnotation()
-
-            if selectedCategory == .noise {
-                // Dynamic OSM-based road noise — every road colored by type/noise level
-                ForEach(noiseService.roads) { road in
-                    MapPolyline(coordinates: road.coordinates)
-                        .stroke(NoiseService.color(for: road.dbLevel).opacity(0.85),
-                                lineWidth: road.lineWidth)
+                if selectedCategory == .crime && showCrimeDetails {
+                    refreshCrimeIncidents()
                 }
+            },
+            onSchoolTap:   { selectedSchool    = $0 },
+            onSuperfundTap:{ selectedSuperfund = $0 },
+            onHousingTap:  { selectedHousing   = $0 },
+            onZIPTap: { region in
+                selectedZIP   = region
+                showZIPSheet  = true
+            },
+            onMapTap: { coord in
+                pinnedLocation = coord
+                computeScores(coord: coord)
             }
-            // Details mode: individual incident markers (zoom in to see)
-            if selectedCategory == .crime && showCrimeDetails && currentSpan.latitudeDelta < 0.08 {
-                ForEach(crimeIncidents) { incident in
-                    Annotation("", coordinate: incident.coordinate) {
-                        CrimeMarkerView(marker: incident)
-                    }
-                }
-            }
-            if selectedCategory == .milpitasOdor {
-                ForEach(odorMapZones()) { zone in
-                    MapPolygon(coordinates: zone.coordinates)
-                        .foregroundStyle(odorColor(Int(zone.value)).opacity(0.4))
-                        .stroke(odorColor(Int(zone.value)), lineWidth: 1)
-                }
-            }
-            if selectedCategory == .electricLines {
-                ForEach(electricService.lines) { line in
-                    MapPolyline(coordinates: line.coordinates)
-                        .stroke(electricColor(line.voltage), lineWidth: line.voltage >= 115 ? 3 : 2)
-                }
-            }
-            if selectedCategory == .schools {
-                ForEach(schoolService.schools) { school in
-                    Annotation(school.name, coordinate: school.coordinate) {
-                        SchoolMarkerView(school: school)
-                            .onTapGesture { selectedSchool = school }
-                    }
-                }
-            }
-            if selectedCategory == .supportiveHome {
-                ForEach(housingService.facilities) { facility in
-                    Annotation(facility.name, coordinate: facility.coordinate) {
-                        HousingMarkerView(facility: facility)
-                            .onTapGesture { selectedHousing = facility }
-                    }
-                }
-            }
-            if selectedCategory == .superfund {
-                ForEach(superfundService.sites) { site in
-                    Annotation(site.name, coordinate: site.coordinate) {
-                        SuperfundMarkerView(site: site)
-                            .onTapGesture { selectedSuperfund = site }
-                    }
-                }
-            }
-            if selectedCategory == .earthquake {
-                ForEach(earthquakeService.events) { event in
-                    Annotation("", coordinate: event.coordinate) {
-                        ZStack {
-                            Circle()
-                                .fill(event.magnitude >= 5.0 ? Color.red.opacity(0.8) :
-                                      event.magnitude >= 4.0 ? Color.orange.opacity(0.75) :
-                                      Color(red:1.0,green:0.75,blue:0.0).opacity(0.65))
-                                .frame(width: CGFloat(max(12, event.magnitude * 9)),
-                                       height: CGFloat(max(12, event.magnitude * 9)))
-                            Text(String(format:"%.1f", event.magnitude))
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                }
-            }
-            if selectedCategory == .fireHazard {
-                ForEach(fireService.hazardZones) { zone in
-                    let col = FireDataService.colorForSeverity(zone.severity)
-                    MapPolygon(coordinates: zone.coordinates)
-                        .foregroundStyle(Color(red: col.r, green: col.g, blue: col.b).opacity(col.opacity))
-                        .stroke(Color(red: col.r, green: col.g, blue: col.b), lineWidth: 1.5)
-                }
-            }
-        }
+        )
         .ignoresSafeArea()
-        .onMapCameraChange { context in
-            currentCenter = context.region.center
-            currentSpan   = context.region.span
-            if selectedCategory == .noise {
-                noiseService.fetchForRegion(context.region)
-            }
-            if selectedCategory == .crime && showCrimeDetails {
-                refreshCrimeIncidents()
-            }
-        }
-        .onLongPressGesture(minimumDuration: 0.5) {
-            // Drop pin at current map center (long-press center)
-            let coord = currentCenter
-            pinnedLocation = coord
-            pinnedAddress = String(format: "%.4f, %.4f", coord.latitude, coord.longitude)
-            // Reverse geocode
-            let geocoder = CLGeocoder()
-            let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-            geocoder.reverseGeocodeLocation(loc) { placemarks, _ in
-                if let p = placemarks?.first {
-                    let parts = [p.name, p.thoroughfare, p.locality].compactMap { $0 }
-                    pinnedAddress = parts.joined(separator: ", ")
-                }
-            }
-            loadAllData(coord: coord)
-            computeScores(coord: coord)
-        }
     }
 
     // MARK: - Nav Bar
@@ -764,7 +669,7 @@ struct ContentView: View {
             if let loc = locationService.location {
                 currentCenter = loc.coordinate
                 currentSpan = MKCoordinateSpan(latitudeDelta: 0.04, longitudeDelta: 0.04)
-                position = .region(MKCoordinateRegion(center: currentCenter, span: currentSpan))
+                mapRegion = MKCoordinateRegion(center: currentCenter, span: currentSpan)
                 loadAllData(coord: currentCenter)
             }
         } label: {
@@ -782,12 +687,7 @@ struct ContentView: View {
     func loadLayerIfNeeded(_ layer: CategoryType) {
         switch layer {
         case .crime:
-            if cachedCrimeZones == nil {
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let zones = crimeMapZones()
-                    DispatchQueue.main.async { self.cachedCrimeZones = zones }
-                }
-            }
+            break  // CrimeTileOverlay handles rendering; no pre-computation needed
         case .noise:
             // Noise always re-fetches based on viewport (Overpass API)
             noiseService.fetchForRegion(MKCoordinateRegion(center: currentCenter, span: currentSpan))
@@ -869,7 +769,7 @@ struct ContentView: View {
             latitudeDelta: max(0.002, min(180, currentSpan.latitudeDelta * factor)),
             longitudeDelta: max(0.002, min(360, currentSpan.longitudeDelta * factor))
         )
-        position = .region(MKCoordinateRegion(center: currentCenter, span: currentSpan))
+        mapRegion = MKCoordinateRegion(center: currentCenter, span: currentSpan)
     }
 
     // MARK: - Score helpers
@@ -917,7 +817,7 @@ struct ContentView: View {
         searchResults = []
         currentCenter = c
         currentSpan = MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.03)
-        position = .region(MKCoordinateRegion(center: c, span: currentSpan))
+        mapRegion = MKCoordinateRegion(center: c, span: currentSpan)
         loadAllData(coord: c)
         computeScores(coord: c)
     }

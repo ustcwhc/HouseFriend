@@ -54,11 +54,11 @@ struct ContentView: View {
             // Right sidebar (vertically centered, with safe area)
             VStack {
                 Spacer().frame(height: 110)
-                HStack {
+                HStack(alignment: .center) {
                     Spacer()
                     sideBar
                 }
-                Spacer().frame(height: pinnedLocation != nil ? 260 : 60)
+                Spacer().frame(height: pinnedLocation != nil ? 280 : 120)
             }
 
             // Zoom + location buttons (bottom-right, above panel)
@@ -68,14 +68,14 @@ struct ContentView: View {
                     // Legend bottom-left
                     LegendView(category: selectedCategory)
                         .padding(.leading, 12)
-                        .padding(.bottom, pinnedLocation != nil ? 310 : 30)
+                        .padding(.bottom, pinnedLocation != nil ? 320 : 90)
                     Spacer()
                     VStack(spacing: 10) {
                         zoomControls
                         locationButton
                     }
                     .padding(.trailing, 6)
-                    .padding(.bottom, pinnedLocation != nil ? 310 : 30)
+                    .padding(.bottom, pinnedLocation != nil ? 320 : 90)
                 }
             }
         }
@@ -288,16 +288,16 @@ struct ContentView: View {
     // MARK: - Right Sidebar
     var sideBar: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 ForEach(NeighborhoodCategory.all) { cat in
                     SidebarButton(category: cat, isSelected: selectedCategory == cat.id) {
                         selectedCategory = cat.id
                     }
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
         }
-        .frame(maxHeight: 460)   // never exceed screen height
+        .frame(maxHeight: 380)
         .background(.regularMaterial)
         .cornerRadius(12)
         .shadow(radius: 4)
@@ -1049,19 +1049,20 @@ struct SidebarButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 Image(systemName: category.icon)
-                    .font(.system(size: 15))
+                    .font(.system(size: 14))
                     .foregroundColor(isSelected ? .white : category.color)
-                    .frame(width: 34, height: 24)
+                    .frame(height: 20)
                 Text(shortName(category.name))
-                    .font(.system(size: 8, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 7, weight: isSelected ? .semibold : .regular))
                     .foregroundColor(isSelected ? .white : .secondary)
                     .lineLimit(1)
-                    .frame(width: 48)
+                    .minimumScaleFactor(0.7)
+                    .frame(width: 50)
             }
-            .frame(width: 52, height: 46)
-            .background(RoundedRectangle(cornerRadius: 9).fill(isSelected ? category.color : Color.clear))
+            .frame(width: 54, height: 38)
+            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? category.color : Color.clear))
         }
     }
 
@@ -1071,7 +1072,6 @@ struct SidebarButton: View {
         case "Supportive Housing": return "Housing"
         case "Electric Lines":     return "Electric"
         case "Fire Hazard":        return "Fire"
-        case "Population":         return "Population"
         default:                   return name
         }
     }

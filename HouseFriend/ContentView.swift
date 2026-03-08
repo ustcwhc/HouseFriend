@@ -598,13 +598,24 @@ struct ScoreCardView: View {
     var body: some View {
         VStack(spacing: 5) {
             ZStack {
+                if let score = category.score {
+                    Circle()
+                        .stroke(Color.gray.opacity(0.15), lineWidth: 3)
+                        .frame(width: 50, height: 50)
+                    Circle()
+                        .trim(from: 0, to: CGFloat(score) / 100.0)
+                        .stroke(scoreColor(score), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .frame(width: 50, height: 50)
+                        .rotationEffect(.degrees(-90))
+                }
                 Circle()
-                    .fill(category.color.opacity(isSelected ? 0.25 : 0.12))
-                    .frame(width: 46, height: 46)
+                    .fill(category.color.opacity(isSelected ? 0.22 : 0.10))
+                    .frame(width: 44, height: 44)
                 Image(systemName: category.icon)
-                    .font(.system(size: 18))
+                    .font(.system(size: 17))
                     .foregroundColor(category.color)
             }
+            .frame(width: 52, height: 52)
             Text(category.name)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.primary)

@@ -32,40 +32,26 @@ class CrimeHeatmapView: UIView {
         let minLon = region.center.longitude - region.span.longitudeDelta / 2
         let maxLon = region.center.longitude + region.span.longitudeDelta / 2
         guard maxLat > minLat, maxLon > minLon else { return }
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
 
-        var bytes = [UInt8](repeating: 0, count: G * G * 4)
+        // Draw colored cells directly via CGContext — avoids premultiplied alpha bugs
+        let cellW = rect.width  / CGFloat(G)
+        let cellH = rect.height / CGFloat(G)
 
         for row in 0..<G {
             for col in 0..<G {
-                // Note: row 0 = top = maxLat
                 let lat = maxLat - Double(row) / Double(G) * (maxLat - minLat)
                 let lon = minLon  + Double(col) / Double(G) * (maxLon - minLon)
-                let v = Self.crimeValue(lat: lat, lon: lon)
+                let v   = Self.crimeValue(lat: lat, lon: lon)
                 let (r, g, b) = Self.crimeRGB(v)
-                // Alpha: low-crime areas still visible (min 0.38), high-crime opaque
-                let alpha = UInt8(min(0.75, max(0.38, v * 0.85)) * 255)
-                let idx = (row * G + col) * 4
-                bytes[idx]   = r
-                bytes[idx+1] = g
-                bytes[idx+2] = b
-                bytes[idx+3] = alpha
+                let alpha = min(0.72, max(0.38, v * 0.82))
+                ctx.setFillColor(red:   CGFloat(r)/255,
+                                 green: CGFloat(g)/255,
+                                 blue:  CGFloat(b)/255,
+                                 alpha: CGFloat(alpha))
+                ctx.fill(CGRect(x: CGFloat(col)*cellW, y: CGFloat(row)*cellH,
+                                width: cellW+0.5, height: cellH+0.5))
             }
-        }
-
-        let space = CGColorSpaceCreateDeviceRGB()
-        let info  = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-        bytes.withUnsafeBytes { ptr in
-            guard
-                let provider = CGDataProvider(data: Data(ptr) as CFData),
-                let img = CGImage(
-                    width: G, height: G,
-                    bitsPerComponent: 8, bitsPerPixel: 32,
-                    bytesPerRow: G * 4, space: space,
-                    bitmapInfo: info, provider: provider,
-                    decode: nil, shouldInterpolate: true,  // ← smooth interpolation!
-                    intent: .defaultIntent)
-            else { return }
-            UIGraphicsGetCurrentContext()?.draw(img, in: rect)
         }
     }
 

@@ -16,15 +16,15 @@ struct ContentView: View {
 
     @State private var position = MapCameraPosition.region(
         MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 37.3861, longitude: -121.9552),
-            span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
+            center: CLLocationCoordinate2D(latitude: 37.650, longitude: -122.150),
+            span: MKCoordinateSpan(latitudeDelta: 0.85, longitudeDelta: 0.85)
         )
     )
     @State private var selectedCategory: CategoryType = .crime
     @State private var searchText = ""
     @State private var searchResults: [MKMapItem] = []
-    @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
-    @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.3861, longitude: -121.9552)
+    @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.85, longitudeDelta: 0.85)
+    @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.650, longitude: -122.150)
     @State private var pinnedLocation: CLLocationCoordinate2D?
     @State private var pinnedAddress  = ""
     @State private var categories     = NeighborhoodCategory.all
@@ -82,7 +82,12 @@ struct ContentView: View {
         .ignoresSafeArea()
         .onAppear {
             locationService.requestPermission()
-            loadAllData(coord: currentCenter)
+            // Load bay-area-wide data on launch
+            noiseService.fetch()
+            fireService.fetchFireData()
+            earthquakeService.fetch()
+            electricService.fetch()
+            housingService.fetch()
         }
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
@@ -904,6 +909,8 @@ struct ContentView: View {
     // MARK: - Zone Data
     func crimeMapZones() -> [MapZone] {
         [
+            // ─── HIGH CRIME ZONES ────────────────────────────────────────────
+            // East San Jose (highest crime in SCC)
             MapZone(coordinates: [
                 CLLocationCoordinate2D(latitude: 37.360, longitude: -121.910),
                 CLLocationCoordinate2D(latitude: 37.340, longitude: -121.880),
@@ -912,7 +919,73 @@ struct ContentView: View {
                 CLLocationCoordinate2D(latitude: 37.335, longitude: -121.830),
                 CLLocationCoordinate2D(latitude: 37.360, longitude: -121.860),
                 CLLocationCoordinate2D(latitude: 37.375, longitude: -121.895),
-            ], value: 0.9),
+            ], value: 0.88),
+            // Downtown Oakland / West Oakland
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.830, longitude: -122.310),
+                CLLocationCoordinate2D(latitude: 37.812, longitude: -122.285),
+                CLLocationCoordinate2D(latitude: 37.798, longitude: -122.268),
+                CLLocationCoordinate2D(latitude: 37.792, longitude: -122.280),
+                CLLocationCoordinate2D(latitude: 37.800, longitude: -122.300),
+                CLLocationCoordinate2D(latitude: 37.815, longitude: -122.318),
+                CLLocationCoordinate2D(latitude: 37.828, longitude: -122.322),
+            ], value: 0.92),
+            // East Oakland (Fruitvale / San Antonio)
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.778, longitude: -122.228),
+                CLLocationCoordinate2D(latitude: 37.762, longitude: -122.215),
+                CLLocationCoordinate2D(latitude: 37.748, longitude: -122.218),
+                CLLocationCoordinate2D(latitude: 37.745, longitude: -122.235),
+                CLLocationCoordinate2D(latitude: 37.755, longitude: -122.248),
+                CLLocationCoordinate2D(latitude: 37.772, longitude: -122.245),
+            ], value: 0.85),
+            // Richmond (Iron Triangle)
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.942, longitude: -122.372),
+                CLLocationCoordinate2D(latitude: 37.928, longitude: -122.355),
+                CLLocationCoordinate2D(latitude: 37.918, longitude: -122.358),
+                CLLocationCoordinate2D(latitude: 37.915, longitude: -122.375),
+                CLLocationCoordinate2D(latitude: 37.925, longitude: -122.390),
+                CLLocationCoordinate2D(latitude: 37.938, longitude: -122.388),
+            ], value: 0.90),
+            // SF Tenderloin / SoMa
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.785, longitude: -122.418),
+                CLLocationCoordinate2D(latitude: 37.778, longitude: -122.408),
+                CLLocationCoordinate2D(latitude: 37.772, longitude: -122.412),
+                CLLocationCoordinate2D(latitude: 37.775, longitude: -122.425),
+                CLLocationCoordinate2D(latitude: 37.782, longitude: -122.430),
+            ], value: 0.88),
+            // SF Mission / Bayview
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.758, longitude: -122.418),
+                CLLocationCoordinate2D(latitude: 37.742, longitude: -122.405),
+                CLLocationCoordinate2D(latitude: 37.732, longitude: -122.395),
+                CLLocationCoordinate2D(latitude: 37.728, longitude: -122.408),
+                CLLocationCoordinate2D(latitude: 37.738, longitude: -122.425),
+                CLLocationCoordinate2D(latitude: 37.752, longitude: -122.428),
+            ], value: 0.78),
+            // Antioch / Pittsburg
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 38.012, longitude: -121.832),
+                CLLocationCoordinate2D(latitude: 37.998, longitude: -121.815),
+                CLLocationCoordinate2D(latitude: 37.988, longitude: -121.820),
+                CLLocationCoordinate2D(latitude: 37.985, longitude: -121.840),
+                CLLocationCoordinate2D(latitude: 37.995, longitude: -121.855),
+                CLLocationCoordinate2D(latitude: 38.008, longitude: -121.850),
+            ], value: 0.75),
+            // Hayward East
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.678, longitude: -122.090),
+                CLLocationCoordinate2D(latitude: 37.662, longitude: -122.075),
+                CLLocationCoordinate2D(latitude: 37.648, longitude: -122.078),
+                CLLocationCoordinate2D(latitude: 37.648, longitude: -122.098),
+                CLLocationCoordinate2D(latitude: 37.662, longitude: -122.108),
+                CLLocationCoordinate2D(latitude: 37.676, longitude: -122.105),
+            ], value: 0.72),
+
+            // ─── MODERATE CRIME ZONES ─────────────────────────────────────────
+            // Central San Jose / Downtown
             MapZone(coordinates: [
                 CLLocationCoordinate2D(latitude: 37.400, longitude: -121.970),
                 CLLocationCoordinate2D(latitude: 37.385, longitude: -121.960),
@@ -920,7 +993,45 @@ struct ContentView: View {
                 CLLocationCoordinate2D(latitude: 37.360, longitude: -121.965),
                 CLLocationCoordinate2D(latitude: 37.375, longitude: -121.980),
                 CLLocationCoordinate2D(latitude: 37.395, longitude: -121.988),
-            ], value: 0.5),
+            ], value: 0.50),
+            // North Oakland / Temescal
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.842, longitude: -122.272),
+                CLLocationCoordinate2D(latitude: 37.832, longitude: -122.262),
+                CLLocationCoordinate2D(latitude: 37.822, longitude: -122.265),
+                CLLocationCoordinate2D(latitude: 37.820, longitude: -122.278),
+                CLLocationCoordinate2D(latitude: 37.830, longitude: -122.288),
+                CLLocationCoordinate2D(latitude: 37.840, longitude: -122.285),
+            ], value: 0.52),
+            // San Jose North (Willow Glen area)
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.325, longitude: -121.925),
+                CLLocationCoordinate2D(latitude: 37.308, longitude: -121.912),
+                CLLocationCoordinate2D(latitude: 37.295, longitude: -121.918),
+                CLLocationCoordinate2D(latitude: 37.298, longitude: -121.938),
+                CLLocationCoordinate2D(latitude: 37.312, longitude: -121.948),
+                CLLocationCoordinate2D(latitude: 37.325, longitude: -121.942),
+            ], value: 0.45),
+            // Concord / Central CC
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.985, longitude: -122.052),
+                CLLocationCoordinate2D(latitude: 37.972, longitude: -122.038),
+                CLLocationCoordinate2D(latitude: 37.960, longitude: -122.042),
+                CLLocationCoordinate2D(latitude: 37.958, longitude: -122.062),
+                CLLocationCoordinate2D(latitude: 37.970, longitude: -122.075),
+                CLLocationCoordinate2D(latitude: 37.982, longitude: -122.070),
+            ], value: 0.48),
+            // San Rafael
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.978, longitude: -122.538),
+                CLLocationCoordinate2D(latitude: 37.965, longitude: -122.525),
+                CLLocationCoordinate2D(latitude: 37.958, longitude: -122.530),
+                CLLocationCoordinate2D(latitude: 37.960, longitude: -122.548),
+                CLLocationCoordinate2D(latitude: 37.972, longitude: -122.555),
+            ], value: 0.42),
+
+            // ─── LOW CRIME ZONES ──────────────────────────────────────────────
+            // Cupertino / Sunnyvale (very safe)
             MapZone(coordinates: [
                 CLLocationCoordinate2D(latitude: 37.360, longitude: -122.060),
                 CLLocationCoordinate2D(latitude: 37.330, longitude: -122.040),
@@ -928,34 +1039,147 @@ struct ContentView: View {
                 CLLocationCoordinate2D(latitude: 37.300, longitude: -122.050),
                 CLLocationCoordinate2D(latitude: 37.325, longitude: -122.075),
                 CLLocationCoordinate2D(latitude: 37.355, longitude: -122.080),
-            ], value: 0.15),
+            ], value: 0.10),
+            // Saratoga / Los Gatos
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.288, longitude: -122.048),
+                CLLocationCoordinate2D(latitude: 37.268, longitude: -122.028),
+                CLLocationCoordinate2D(latitude: 37.252, longitude: -122.015),
+                CLLocationCoordinate2D(latitude: 37.248, longitude: -122.038),
+                CLLocationCoordinate2D(latitude: 37.260, longitude: -122.058),
+                CLLocationCoordinate2D(latitude: 37.278, longitude: -122.065),
+            ], value: 0.08),
+            // Palo Alto / Menlo Park
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.458, longitude: -122.178),
+                CLLocationCoordinate2D(latitude: 37.438, longitude: -122.158),
+                CLLocationCoordinate2D(latitude: 37.418, longitude: -122.148),
+                CLLocationCoordinate2D(latitude: 37.410, longitude: -122.168),
+                CLLocationCoordinate2D(latitude: 37.425, longitude: -122.188),
+                CLLocationCoordinate2D(latitude: 37.448, longitude: -122.195),
+            ], value: 0.10),
+            // Marin (Mill Valley / Tiburon)
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.912, longitude: -122.558),
+                CLLocationCoordinate2D(latitude: 37.895, longitude: -122.538),
+                CLLocationCoordinate2D(latitude: 37.882, longitude: -122.542),
+                CLLocationCoordinate2D(latitude: 37.882, longitude: -122.562),
+                CLLocationCoordinate2D(latitude: 37.895, longitude: -122.572),
+                CLLocationCoordinate2D(latitude: 37.910, longitude: -122.570),
+            ], value: 0.08),
+            // Piedmont / Oakland Hills
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.832, longitude: -122.242),
+                CLLocationCoordinate2D(latitude: 37.820, longitude: -122.228),
+                CLLocationCoordinate2D(latitude: 37.812, longitude: -122.235),
+                CLLocationCoordinate2D(latitude: 37.812, longitude: -122.252),
+                CLLocationCoordinate2D(latitude: 37.822, longitude: -122.262),
+                CLLocationCoordinate2D(latitude: 37.830, longitude: -122.258),
+            ], value: 0.12),
+            // Orinda / Moraga / Lafayette
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.892, longitude: -122.188),
+                CLLocationCoordinate2D(latitude: 37.872, longitude: -122.165),
+                CLLocationCoordinate2D(latitude: 37.855, longitude: -122.158),
+                CLLocationCoordinate2D(latitude: 37.848, longitude: -122.178),
+                CLLocationCoordinate2D(latitude: 37.860, longitude: -122.205),
+                CLLocationCoordinate2D(latitude: 37.878, longitude: -122.212),
+            ], value: 0.10),
+            // Dublin / Pleasanton / San Ramon (Tri-Valley safe suburbs)
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.722, longitude: -121.958),
+                CLLocationCoordinate2D(latitude: 37.698, longitude: -121.935),
+                CLLocationCoordinate2D(latitude: 37.668, longitude: -121.898),
+                CLLocationCoordinate2D(latitude: 37.658, longitude: -121.920),
+                CLLocationCoordinate2D(latitude: 37.672, longitude: -121.952),
+                CLLocationCoordinate2D(latitude: 37.698, longitude: -121.968),
+                CLLocationCoordinate2D(latitude: 37.718, longitude: -121.978),
+            ], value: 0.12),
+            // SF Pacific Heights / Marina / Noe Valley
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.800, longitude: -122.442),
+                CLLocationCoordinate2D(latitude: 37.792, longitude: -122.428),
+                CLLocationCoordinate2D(latitude: 37.782, longitude: -122.432),
+                CLLocationCoordinate2D(latitude: 37.782, longitude: -122.448),
+                CLLocationCoordinate2D(latitude: 37.790, longitude: -122.458),
+                CLLocationCoordinate2D(latitude: 37.798, longitude: -122.455),
+            ], value: 0.18),
         ]
     }
 
     func odorMapZones() -> [MapZone] {
         [
+            // Newby Island Landfill (Milpitas) — worst odor source
             MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.450, longitude: -121.920),
-                CLLocationCoordinate2D(latitude: 37.440, longitude: -121.960),
+                CLLocationCoordinate2D(latitude: 37.462, longitude: -121.912),
+                CLLocationCoordinate2D(latitude: 37.448, longitude: -121.908),
+                CLLocationCoordinate2D(latitude: 37.435, longitude: -121.918),
+                CLLocationCoordinate2D(latitude: 37.435, longitude: -121.938),
+                CLLocationCoordinate2D(latitude: 37.448, longitude: -121.948),
+                CLLocationCoordinate2D(latitude: 37.462, longitude: -121.932),
+            ], value: 3),
+            // Milpitas / North SJ downwind plume
+            MapZone(coordinates: [
                 CLLocationCoordinate2D(latitude: 37.430, longitude: -121.990),
-                CLLocationCoordinate2D(latitude: 37.420, longitude: -121.980),
+                CLLocationCoordinate2D(latitude: 37.420, longitude: -121.970),
                 CLLocationCoordinate2D(latitude: 37.430, longitude: -121.950),
                 CLLocationCoordinate2D(latitude: 37.445, longitude: -121.915),
+                CLLocationCoordinate2D(latitude: 37.462, longitude: -121.912),
+                CLLocationCoordinate2D(latitude: 37.462, longitude: -121.932),
+                CLLocationCoordinate2D(latitude: 37.448, longitude: -121.948),
+            ], value: 2),
+            // Fremont / Newark industrial corridor
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.548, longitude: -122.010),
+                CLLocationCoordinate2D(latitude: 37.528, longitude: -122.000),
+                CLLocationCoordinate2D(latitude: 37.508, longitude: -121.990),
+                CLLocationCoordinate2D(latitude: 37.498, longitude: -122.008),
+                CLLocationCoordinate2D(latitude: 37.515, longitude: -122.025),
+                CLLocationCoordinate2D(latitude: 37.538, longitude: -122.030),
+            ], value: 2),
+            // Richmond refinery corridor (Chevron, Marathon)
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.952, longitude: -122.408),
+                CLLocationCoordinate2D(latitude: 37.938, longitude: -122.388),
+                CLLocationCoordinate2D(latitude: 37.925, longitude: -122.378),
+                CLLocationCoordinate2D(latitude: 37.915, longitude: -122.388),
+                CLLocationCoordinate2D(latitude: 37.922, longitude: -122.412),
+                CLLocationCoordinate2D(latitude: 37.938, longitude: -122.425),
             ], value: 3),
+            // Vallejo / Benicia industrial
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 38.118, longitude: -122.248),
+                CLLocationCoordinate2D(latitude: 38.102, longitude: -122.232),
+                CLLocationCoordinate2D(latitude: 38.088, longitude: -122.238),
+                CLLocationCoordinate2D(latitude: 38.088, longitude: -122.258),
+                CLLocationCoordinate2D(latitude: 38.102, longitude: -122.268),
+                CLLocationCoordinate2D(latitude: 38.115, longitude: -122.262),
+            ], value: 2),
+            // SF Bayview / Hunters Point industrial
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.732, longitude: -122.378),
+                CLLocationCoordinate2D(latitude: 37.718, longitude: -122.362),
+                CLLocationCoordinate2D(latitude: 37.708, longitude: -122.368),
+                CLLocationCoordinate2D(latitude: 37.712, longitude: -122.388),
+                CLLocationCoordinate2D(latitude: 37.722, longitude: -122.395),
+                CLLocationCoordinate2D(latitude: 37.732, longitude: -122.390),
+            ], value: 2),
+            // East Bay flatlands / port area
+            MapZone(coordinates: [
+                CLLocationCoordinate2D(latitude: 37.812, longitude: -122.302),
+                CLLocationCoordinate2D(latitude: 37.798, longitude: -122.285),
+                CLLocationCoordinate2D(latitude: 37.782, longitude: -122.272),
+                CLLocationCoordinate2D(latitude: 37.778, longitude: -122.290),
+                CLLocationCoordinate2D(latitude: 37.790, longitude: -122.308),
+                CLLocationCoordinate2D(latitude: 37.808, longitude: -122.318),
+            ], value: 2),
+            // South Bay light industry (Mountain View / Sunnyvale)
             MapZone(coordinates: [
                 CLLocationCoordinate2D(latitude: 37.430, longitude: -122.010),
                 CLLocationCoordinate2D(latitude: 37.410, longitude: -122.030),
                 CLLocationCoordinate2D(latitude: 37.390, longitude: -122.000),
                 CLLocationCoordinate2D(latitude: 37.400, longitude: -121.970),
                 CLLocationCoordinate2D(latitude: 37.420, longitude: -121.980),
-            ], value: 2),
-            MapZone(coordinates: [
-                CLLocationCoordinate2D(latitude: 37.480, longitude: -122.010),
-                CLLocationCoordinate2D(latitude: 37.460, longitude: -122.040),
-                CLLocationCoordinate2D(latitude: 37.440, longitude: -122.050),
-                CLLocationCoordinate2D(latitude: 37.420, longitude: -122.040),
-                CLLocationCoordinate2D(latitude: 37.440, longitude: -122.010),
-                CLLocationCoordinate2D(latitude: 37.465, longitude: -121.990),
             ], value: 1),
         ]
     }

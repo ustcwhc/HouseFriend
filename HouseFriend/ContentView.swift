@@ -23,6 +23,8 @@ struct ContentView: View {
     @State private var selectedCategory: CategoryType = .crime
     @State private var searchText = ""
     @State private var searchResults: [MKMapItem] = []
+    @StateObject private var searchCompleter = SearchCompleterService()
+    @State private var isSearchFocused = false
     @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.85, longitudeDelta: 0.85)
     @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.650, longitude: -122.150)
     @State private var pinnedLocation: CLLocationCoordinate2D?
@@ -41,7 +43,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 navBar
                 searchBar
-                if !searchResults.isEmpty { searchDropdown }
+                if !searchResults.isEmpty || !searchCompleter.completions.isEmpty { searchDropdown }
                 Spacer()
                 // Empty state hint or bottom panel
                 if pinnedLocation != nil {
@@ -278,11 +280,18 @@ struct ContentView: View {
                 .autocorrectionDisabled()
                 .onSubmit { performSearch() }
                 .onChange(of: searchText) { _, v in
-                    if v.count > 2 { performSearch() }
-                    if v.isEmpty { searchResults = [] }
+                    if v.isEmpty {
+                        searchResults = []
+                        searchCompleter.clear()
+                    } else {
+                        // MKLocalSearchCompleter gives instant fuzzy suggestions
+                        searchCompleter.search(v)
+                        // Also run full search for richer results
+                        if v.count >= 2 { performSearch() }
+                    }
                 }
             if !searchText.isEmpty {
-                Button { searchText = ""; searchResults = [] } label: {
+                Button { searchText = ""; searchResults = []; searchCompleter.clear() } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
                 }
             }
@@ -294,19 +303,60 @@ struct ContentView: View {
 
     var searchDropdown: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(searchResults.prefix(5), id: \.self) { item in
-                Button { selectItem(item) } label: {
+            // Completer suggestions (fast, fuzzy, instant)
+            ForEach(searchCompleter.completions.prefix(4)) { completion in
+                Button {
+                    resolveCompletion(completion)
+                } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: "mappin.circle").foregroundColor(.red).font(.title3)
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.blue).font(.subheadline)
+                            .frame(width: 26)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(item.name ?? "").font(.subheadline).fontWeight(.medium).foregroundColor(.primary)
-                            Text(item.placemark.title ?? "").font(.caption).foregroundColor(.secondary).lineLimit(1)
+                            Text(completion.title)
+                                .font(.subheadline).fontWeight(.medium).foregroundColor(.primary)
+                            if !completion.subtitle.isEmpty {
+                                Text(completion.subtitle)
+                                    .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                            }
                         }
                         Spacer()
+                        Image(systemName: "arrow.up.left")
+                            .font(.caption2).foregroundColor(.secondary)
                     }
                     .padding(.horizontal, 12).padding(.vertical, 9)
                 }
-                Divider().padding(.leading, 44)
+                Divider().padding(.leading, 50)
+            }
+
+            // Full search results (slower, but has coordinates)
+            if !searchResults.isEmpty {
+                if !searchCompleter.completions.isEmpty {
+                    HStack {
+                        Text("Best Matches").font(.caption2).foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 4)
+                    .background(Color(UIColor.secondarySystemBackground))
+                }
+                ForEach(searchResults.prefix(4), id: \.self) { item in
+                    Button { selectItem(item) } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "mappin.circle.fill")
+                                .foregroundColor(.red).font(.subheadline)
+                                .frame(width: 26)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.name ?? "")
+                                    .font(.subheadline).fontWeight(.medium).foregroundColor(.primary)
+                                Text(item.placemark.title ?? "")
+                                    .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                    }
+                    Divider().padding(.leading, 50)
+                }
             }
         }
         .background(.regularMaterial)
@@ -713,8 +763,24 @@ struct ContentView: View {
         guard !searchText.isEmpty else { return }
         let req = MKLocalSearch.Request()
         req.naturalLanguageQuery = searchText
+        // Bias results toward Bay Area
+        req.region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 37.650, longitude: -122.100),
+            span: MKCoordinateSpan(latitudeDelta: 1.5, longitudeDelta: 1.5)
+        )
+        req.resultTypes = [.address, .pointOfInterest]
         MKLocalSearch(request: req).start { resp, _ in
-            DispatchQueue.main.async { searchResults = resp?.mapItems ?? [] }
+            DispatchQueue.main.async { self.searchResults = resp?.mapItems ?? [] }
+        }
+    }
+
+    func resolveCompletion(_ completion: SearchCompletion) {
+        // Convert a completer suggestion into a full map item
+        let req = MKLocalSearch.Request(completion: completion.original)
+        MKLocalSearch(request: req).start { resp, _ in
+            if let item = resp?.mapItems.first {
+                DispatchQueue.main.async { self.selectItem(item) }
+            }
         }
     }
 

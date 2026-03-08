@@ -1,7 +1,6 @@
 import SwiftUI
 import MapKit
 
-// MARK: - Main View
 struct ContentView: View {
     @StateObject private var locationService   = LocationService()
     @StateObject private var earthquakeService = EarthquakeService()
@@ -23,44 +22,81 @@ struct ContentView: View {
     @State private var selectedCategory: CategoryType = .crime
     @State private var searchText = ""
     @State private var searchResults: [MKMapItem] = []
+    @State private var currentSpan = MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
+    @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.3861, longitude: -121.9552)
     @State private var pinnedLocation: CLLocationCoordinate2D?
 
     var body: some View {
         ZStack {
             mapLayer
+
+            // Top: NavBar + Search
             VStack(spacing: 0) {
                 navBar
                 searchBar
                 if !searchResults.isEmpty { searchDropdown }
                 Spacer()
             }
+
+            // Right sidebar
             HStack {
                 Spacer()
                 sideBar.padding(.top, 110)
             }
+
+            // Bottom-left legend + Bottom-right controls
             VStack {
                 Spacer()
                 HStack(alignment: .bottom) {
+                    // Legend
                     LegendView(category: selectedCategory)
                         .padding(.leading, 12)
                         .padding(.bottom, 30)
+
                     Spacer()
-                    Button {
-                        if let loc = locationService.location {
-                            position = .region(MKCoordinateRegion(
-                                center: loc.coordinate,
-                                span: MKCoordinateSpan(latitudeDelta: 0.04, longitudeDelta: 0.04)
-                            ))
-                            loadAllData(coord: loc.coordinate)
+
+                    // Right controls: zoom + location
+                    VStack(spacing: 10) {
+                        // Zoom buttons
+                        VStack(spacing: 0) {
+                            Button { zoom(in: true) } label: {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 42, height: 42)
+                            }
+                            Divider().frame(width: 28)
+                            Button { zoom(in: false) } label: {
+                                Image(systemName: "minus")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 42, height: 42)
+                            }
                         }
-                    } label: {
-                        Image(systemName: "location.fill")
-                            .font(.title3).foregroundColor(.blue)
-                            .padding(12)
-                            .background(Circle().fill(.regularMaterial))
-                            .shadow(radius: 3)
+                        .background(.regularMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .shadow(radius: 3)
+
+                        // My location
+                        Button {
+                            if let loc = locationService.location {
+                                position = .region(MKCoordinateRegion(
+                                    center: loc.coordinate,
+                                    span: MKCoordinateSpan(latitudeDelta: 0.04, longitudeDelta: 0.04)
+                                ))
+                                loadAllData(coord: loc.coordinate)
+                            }
+                        } label: {
+                            Image(systemName: "location.fill")
+                                .font(.title3).foregroundColor(.blue)
+                                .frame(width: 42, height: 42)
+                                .background(.regularMaterial)
+                                .clipShape(Circle())
+                                .shadow(radius: 3)
+                        }
                     }
-                    .padding(.trailing, 12).padding(.bottom, 30)
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 30)
                 }
             }
         }
@@ -69,6 +105,16 @@ struct ContentView: View {
             locationService.requestPermission()
             loadAllData(coord: CLLocationCoordinate2D(latitude: 37.3861, longitude: -121.9552))
         }
+    }
+
+    // MARK: - Zoom
+    func zoom(in zoomIn: Bool) {
+        let factor: Double = zoomIn ? 0.5 : 2.0
+        currentSpan = MKCoordinateSpan(
+            latitudeDelta: max(0.002, min(180, currentSpan.latitudeDelta * factor)),
+            longitudeDelta: max(0.002, min(360, currentSpan.longitudeDelta * factor))
+        )
+        position = .region(MKCoordinateRegion(center: currentCenter, span: currentSpan))
     }
 
     // MARK: - Map
@@ -245,8 +291,9 @@ struct ContentView: View {
         pinnedLocation = c
         searchText = item.name ?? ""
         searchResults = []
-        position = .region(MKCoordinateRegion(center: c,
-            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
+        currentCenter = c
+        currentSpan = MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+        position = .region(MKCoordinateRegion(center: c, span: currentSpan))
         loadAllData(coord: c)
     }
 
@@ -324,7 +371,6 @@ struct ContentView: View {
     func crimeColor(_ intensity: Double) -> Color {
         Color(red: min(1.0, intensity * 1.2), green: max(0.0, 0.4 - intensity * 0.4), blue: 0.0)
     }
-
     func odorColor(_ level: Int) -> Color {
         switch level {
         case 3: return Color(red: 1.0, green: 0.5, blue: 0.1)
@@ -332,13 +378,11 @@ struct ContentView: View {
         default: return Color(red: 0.5, green: 0.8, blue: 1.0)
         }
     }
-
     func electricColor(_ voltage: Int) -> Color {
         if voltage >= 115 { return .purple }
         if voltage >= 60  { return Color(red: 0.7, green: 0.1, blue: 0.8) }
         return Color(red: 0.85, green: 0.5, blue: 0.9)
     }
-
     func fireHighRisk() -> [CLLocationCoordinate2D] {
         [CLLocationCoordinate2D(latitude: 37.350, longitude: -122.100),
          CLLocationCoordinate2D(latitude: 37.330, longitude: -122.080),
@@ -347,7 +391,6 @@ struct ContentView: View {
          CLLocationCoordinate2D(latitude: 37.310, longitude: -122.110),
          CLLocationCoordinate2D(latitude: 37.340, longitude: -122.120)]
     }
-
     func fireMedRisk() -> [CLLocationCoordinate2D] {
         [CLLocationCoordinate2D(latitude: 37.380, longitude: -122.080),
          CLLocationCoordinate2D(latitude: 37.355, longitude: -122.060),
@@ -363,17 +406,13 @@ struct SidebarButton: View {
     let category: NeighborhoodCategory
     let isSelected: Bool
     let action: () -> Void
-
     var body: some View {
         Button(action: action) {
             Image(systemName: category.icon)
                 .font(.system(size: 17))
                 .foregroundColor(isSelected ? .white : category.color)
                 .frame(width: 40, height: 40)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isSelected ? category.color : Color.clear)
-                )
+                .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? category.color : Color.clear))
         }
     }
 }

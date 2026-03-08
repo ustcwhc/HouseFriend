@@ -14,7 +14,7 @@ class EarthquakeService: ObservableObject {
     @Published var isLoading = false
 
     // USGS Earthquake API - past 30 days, magnitude >= 2.5, Bay Area bounding box
-    private let urlString = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=2024-01-01&minmagnitude=2.5&minlatitude=36.8&maxlatitude=38.0&minlongitude=-122.6&maxlongitude=-121.2&orderby=magnitude"
+    private let urlString = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=2025-09-01&minmagnitude=2.5&minlatitude=36.8&maxlatitude=38.0&minlongitude=-122.6&maxlongitude=-121.2&orderby=magnitude"
 
     func fetch() {
         isLoading = true

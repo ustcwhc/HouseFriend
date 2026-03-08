@@ -155,11 +155,18 @@ struct ContentView: View {
             }
             if selectedCategory == .earthquake {
                 ForEach(earthquakeService.events) { event in
-                    Annotation("M\(String(format:"%.1f", event.magnitude))", coordinate: event.coordinate) {
-                        Circle()
-                            .fill(event.magnitude > 4.5 ? Color.red.opacity(0.75) : Color.orange.opacity(0.6))
-                            .frame(width: CGFloat(max(10, event.magnitude * 8)),
-                                   height: CGFloat(max(10, event.magnitude * 8)))
+                    Annotation("", coordinate: event.coordinate) {
+                        ZStack {
+                            Circle()
+                                .fill(event.magnitude >= 5.0 ? Color.red.opacity(0.8) :
+                                      event.magnitude >= 4.0 ? Color.orange.opacity(0.75) :
+                                      Color(red:1.0,green:0.75,blue:0.0).opacity(0.65))
+                                .frame(width: CGFloat(max(12, event.magnitude * 9)),
+                                       height: CGFloat(max(12, event.magnitude * 9)))
+                            Text(String(format:"%.1f", event.magnitude))
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.white)
+                        }
                     }
                 }
             }
@@ -417,7 +424,7 @@ struct ContentView: View {
         airQualityService.fetch(lat: coord.latitude, lon: coord.longitude)
         crimeService.fetchNear(lat: coord.latitude, lon: coord.longitude)
         fireService.fetchFireData()
-        schoolService.fetch()
+        schoolService.fetchNear(lat: coord.latitude, lon: coord.longitude)
         electricService.fetch()
         housingService.fetch()
         noiseService.fetch()

@@ -41,6 +41,14 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             mapLayer
+            // Crime heatmap — pixel-rendered, sits above map but below all UI
+            if selectedCategory == .crime {
+                CrimeHeatmapOverlay(
+                    region: MKCoordinateRegion(center: currentCenter, span: currentSpan)
+                )
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
 
             // Top: NavBar + Search
             VStack(spacing: 0) {
@@ -129,17 +137,6 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
-        .overlay(
-            // Crime heatmap: pixel-level CGImage rendering (smooth, no grid lines)
-            Group {
-                if selectedCategory == .crime {
-                    CrimeHeatmapOverlay(
-                        region: MKCoordinateRegion(center: currentCenter, span: currentSpan)
-                    )
-                    .allowsHitTesting(false)
-                }
-            }
-        )
         .onAppear {
             locationService.requestPermission()
             // Load bay-area-wide data on launch

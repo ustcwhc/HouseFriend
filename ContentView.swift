@@ -2,57 +2,119 @@ import SwiftUI
 import MapKit
 
 struct ContentView: View {
-    // 默认定位到湾区 (San Francisco)
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
-        span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
+        span: MKCoordinateSpan(latitudeDelta: 0.3, longitudeDelta: 0.3)
     )
-
+    
+    @State private var activeLayers: Set<MapLayer> = [.fire, .earthquake]
+    @State private var showSettings = false
+    
     var body: some View {
         ZStack {
             Map(coordinateRegion: , showsUserLocation: true)
                 .edgesIgnoringSafeArea(.all)
             
             VStack {
-                Text("HoodScout")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .padding()
-                    .background(Color.white.opacity(0.8))
-                    .cornerRadius(10)
-                    .padding(.top, 50)
+                // Header
+                HStack {
+                    Text("🏡 HouseFriend")
+                        .font(.title2)
+                        .fontWeight(.heavy)
+                        .padding()
+                        .background(BlurView(style: .systemMaterial))
+                        .cornerRadius(15)
+                        .shadow(radius: 5)
+                    Spacer()
+                    Button(action: { showSettings.toggle() }) {
+                        Image(systemName: "layers.3.fill")
+                            .font(.title2)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .clipShape(Circle())
+                            .shadow(radius: 5)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 50)
                 
                 Spacer()
                 
-                HStack {
-                    Button(action: {
-                        // 未来在这里切换地震带图层
-                    }) {
-                        Label("Earthquake", systemImage: "waveform.path.ecg")
-                            .padding()
-                            .background(Color.orange)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
+                // Active Layer Indicators
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach(MapLayer.allCases) { layer in
+                            Toggle(isOn: Binding(
+                                get: { activeLayers.contains(layer) },
+                                set: { isOn in
+                                    if isOn { activeLayers.insert(layer) }
+                                    else { activeLayers.remove(layer) }
+                                }
+                            )) {
+                                Label(layer.rawValue, systemImage: layer.icon)
+                            }
+                            .toggleStyle(.button)
+                            .buttonStyle(.borderedProminent)
+                            .tint(activeLayers.contains(layer) ? layerColor(layer) : .gray)
+                            .clipShape(Capsule())
+                        }
                     }
-                    
-                    Button(action: {
-                        // 未来在这里切换火灾图层
-                    }) {
-                        Label("Fire", systemImage: "flame.fill")
-                            .padding()
-                            .background(Color.red)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
-                    }
+                    .padding()
                 }
-                .padding(.bottom, 30)
+                .background(BlurView(style: .systemUltraThinMaterial))
             }
+        }
+        .sheet(isPresented: ) {
+            LayerSettingsView(activeLayers: )
+        }
+    }
+    
+    func layerColor(_ layer: MapLayer) -> Color {
+        switch layer {
+        case .fire: return .red
+        case .earthquake: return .orange
+        case .crime: return .purple
+        case .school: return .blue
+        case .noise: return .yellow
+        default: return .green
         }
     }
 }
 
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView()
+struct BlurView: UIViewRepresentable {
+    var style: UIBlurEffect.Style
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        UIVisualEffectView(effect: UIBlurEffect(style: style))
+    }
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
+}
+
+struct LayerSettingsView: View {
+    @Binding var activeLayers: Set<MapLayer>
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        NavigationView {
+            List(MapLayer.allCases) { layer in
+                HStack {
+                    Label(layer.rawValue, systemImage: layer.icon)
+                    Spacer()
+                    if activeLayers.contains(layer) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.blue)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if activeLayers.contains(layer) { activeLayers.remove(layer) }
+                    else { activeLayers.insert(layer) }
+                }
+            }
+            .navigationTitle("Map Layers")
+            .navigationBarItems(trailing: Button("Done") {
+                presentationMode.wrappedValue.dismiss()
+            })
+        }
     }
 }

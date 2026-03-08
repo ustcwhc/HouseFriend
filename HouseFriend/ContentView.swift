@@ -43,9 +43,11 @@ struct ContentView: View {
                 searchBar
                 if !searchResults.isEmpty { searchDropdown }
                 Spacer()
-                // Bottom panel when location pinned
+                // Empty state hint or bottom panel
                 if pinnedLocation != nil {
                     bottomPanel
+                } else {
+                    emptyStateHint
                 }
             }
 
@@ -260,11 +262,34 @@ struct ContentView: View {
             }
             .padding(.vertical, 6)
         }
-        .frame(maxHeight: 420)   // never exceed screen height
+        .frame(maxHeight: 400)   // never exceed screen height
         .background(.regularMaterial)
         .cornerRadius(12)
         .shadow(radius: 4)
         .padding(.trailing, 8)
+    }
+
+    // MARK: - Empty State
+    var emptyStateHint: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass.circle.fill")
+                .font(.title2)
+                .foregroundColor(.blue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Search any address")
+                    .font(.subheadline).fontWeight(.semibold)
+                Text("Get a full neighborhood safety report")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.regularMaterial)
+        .cornerRadius(16, corners: [.topLeft, .topRight])
+        .shadow(color: .black.opacity(0.1), radius: 8, y: -3)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 30)
     }
 
     // MARK: - Bottom Panel

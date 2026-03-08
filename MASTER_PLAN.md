@@ -29,6 +29,7 @@
 - **地图优先**：所有数据用颜色叠加在地图上，不用表格
 - **一键评分**：搜索地址后底部弹出「Neighborhood Report」，给出 A/B/C/D/F 评级
 - **覆盖完整**：数据覆盖整个旧金山湾区 9 县，不仅限于硅谷
+- **按需加载**：只有用户切换到某个图层时，才加载该图层的数据；不预先加载所有图层，节省流量和内存
 
 ---
 
@@ -409,7 +410,46 @@ HouseFriend/
 
 ---
 
-### 9.10 整体 UX 流程（完整用户旅程）
+### 9.10 性能 & 流量规格
+
+**按需加载原则（Lazy Loading）**
+- App 启动时只请求定位权限，**不加载任何图层数据**
+- 用户切换到某个图层时，才触发该图层的数据加载
+- 切换回已加载过的图层时，优先使用缓存，不重复请求网络
+
+**各图层加载策略**
+
+| 图层 | 加载时机 | 缓存策略 |
+|------|---------|---------|
+| Crime 犯罪热力图 | 切换到 Crime tab 时，后台线程计算 Gaussian 网格 | 永久缓存（纯计算，不联网） |
+| Noise 噪音 | 切换到 Noise tab 时拉取 Overpass API | 地图移动超过 50% 视野时刷新 |
+| Schools 学校 | 切换到 Schools tab 时加载 | 永久缓存（硬编码数据） |
+| Earthquake 地震 | 切换到 Earthquake tab 时请求 USGS | Session 内缓存 30 分钟 |
+| Fire Hazard 火灾 | 切换到 Fire tab 时加载 | 永久缓存（硬编码数据） |
+| Superfund | 切换到 Superfund tab 时加载 | 永久缓存（硬编码数据） |
+| Air Quality | 切换到 Air tab 时请求 Open-Meteo | Session 内缓存 1 小时 |
+| Electric Lines | 切换到 Electric tab 时加载 | 永久缓存（硬编码数据） |
+| Supportive Housing | 切换到 Housing tab 时加载 | 永久缓存（硬编码数据） |
+| Population | 切换到 Population tab 时加载 | 永久缓存（硬编码数据） |
+
+**加载动画规格**
+- 切换图层时，如果数据尚未就绪，地图中央显示旋转 Loading 动画（`ProgressView` 样式）
+- Loading 动画带半透明黑色背景圆角卡片，不遮挡整个地图，居中偏上显示
+- 卡片内容：🔄 spinner + 图层名称（如「Loading Earthquake data...」）
+- 数据加载完成后动画自动消失，无需用户操作
+- 硬编码数据（Schools、Fire 等）加载极快，Loading 动画持续 < 0.3s，几乎感知不到
+- 网络请求（Overpass、USGS）可能需要 1-3s，Loading 动画明显可见
+
+**实现方式**
+- 每个 Service 增加 `isLoaded: Bool` 标志，已加载则跳过
+- Sidebar 按钮切换时触发 `loadIfNeeded()` 而非 `fetch()`
+- 网络请求类 Service（Overpass、USGS、Open-Meteo）加入 30 分钟 TTL 缓存
+- ContentView 增加 `@State var isLayerLoading: Bool`，切换时设为 true，数据到位后设为 false
+- Loading 卡片作为 ZStack 最顶层 overlay，`isLayerLoading == true` 时显示
+
+---
+
+### 9.11 整体 UX 流程（完整用户旅程）
 
 ```
 打开 app

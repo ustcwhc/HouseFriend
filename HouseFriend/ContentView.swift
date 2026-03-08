@@ -2,6 +2,7 @@ import SwiftUI
 import MapKit
 
 struct ContentView: View {
+    // 默认定位到旧金山湾区
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
         span: MKCoordinateSpan(latitudeDelta: 0.3, longitudeDelta: 0.3)
@@ -12,6 +13,7 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
+            // macOS 下的 Map 组件写法略有不同，我们用这种更通用的方式
             Map(coordinateRegion: , showsUserLocation: true)
                 .edgesIgnoringSafeArea(.all)
             
@@ -22,7 +24,7 @@ struct ContentView: View {
                         .font(.title2)
                         .fontWeight(.heavy)
                         .padding()
-                        .background(BlurView(style: .systemMaterial))
+                        .background(VisualEffectView(material: .headerView, blendingMode: .withinWindow))
                         .cornerRadius(15)
                         .shadow(radius: 5)
                     Spacer()
@@ -37,7 +39,7 @@ struct ContentView: View {
                     }
                 }
                 .padding(.horizontal)
-                .padding(.top, 50)
+                .padding(.top, 20)
                 
                 Spacer()
                 
@@ -45,24 +47,20 @@ struct ContentView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack {
                         ForEach(MapLayer.allCases) { layer in
-                            Toggle(isOn: Binding(
-                                get: { activeLayers.contains(layer) },
-                                set: { isOn in
-                                    if isOn { activeLayers.insert(layer) }
-                                    else { activeLayers.remove(layer) }
-                                }
-                            )) {
+                            Button(action: {
+                                if activeLayers.contains(layer) { activeLayers.remove(layer) }
+                                else { activeLayers.insert(layer) }
+                            }) {
                                 Label(layer.rawValue, systemImage: layer.icon)
                             }
-                            .toggleStyle(.button)
                             .buttonStyle(.borderedProminent)
-                            .tint(activeLayers.contains(layer) ? layerColor(layer) : .gray)
+                            .tint(activeLayers.contains(layer) ? layerColor(layer) : .secondary)
                             .clipShape(Capsule())
                         }
                     }
                     .padding()
                 }
-                .background(BlurView(style: .systemUltraThinMaterial))
+                .background(VisualEffectView(material: .contentBackground, blendingMode: .withinWindow))
             }
         }
         .sheet(isPresented: ) {
@@ -82,12 +80,20 @@ struct ContentView: View {
     }
 }
 
-struct BlurView: UIViewRepresentable {
-    var style: UIBlurEffect.Style
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        UIVisualEffectView(effect: UIBlurEffect(style: style))
+// macOS 适配的毛玻璃效果
+struct VisualEffectView: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+    let blendingMode: NSVisualEffectView.BlendingMode
+    
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let visualEffectView = NSVisualEffectView()
+        visualEffectView.material = material
+        visualEffectView.blendingMode = blendingMode
+        visualEffectView.state = .active
+        return visualEffectView
     }
-    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
+    
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 struct LayerSettingsView: View {
@@ -95,7 +101,17 @@ struct LayerSettingsView: View {
     @Environment(\.presentationMode) var presentationMode
     
     var body: some View {
-        NavigationView {
+        VStack {
+            HStack {
+                Text("Map Layers")
+                    .font(.headline)
+                Spacer()
+                Button("Done") {
+                    presentationMode.wrappedValue.dismiss()
+                }
+            }
+            .padding()
+            
             List(MapLayer.allCases) { layer in
                 HStack {
                     Label(layer.rawValue, systemImage: layer.icon)
@@ -111,10 +127,13 @@ struct LayerSettingsView: View {
                     else { activeLayers.insert(layer) }
                 }
             }
-            .navigationTitle("Map Layers")
-            .navigationBarItems(trailing: Button("Done") {
-                presentationMode.wrappedValue.dismiss()
-            })
         }
+        .frame(width: 300, height: 400)
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
     }
 }

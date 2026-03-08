@@ -66,9 +66,31 @@ struct ContentView: View {
                 Spacer()
                 HStack {
                     // Legend bottom-left
-                    LegendView(category: selectedCategory)
-                        .padding(.leading, 12)
-                        .padding(.bottom, pinnedLocation != nil ? 320 : 90)
+                    VStack(alignment: .leading, spacing: 6) {
+                        LegendView(category: selectedCategory)
+                        // Noise loading/zoom hint
+                        if selectedCategory == .noise {
+                            if noiseService.isLoading {
+                                HStack(spacing: 6) {
+                                    ProgressView().scaleEffect(0.7)
+                                    Text("Loading road data...").font(.caption2)
+                                }
+                                .padding(8).background(.regularMaterial).cornerRadius(8)
+                            } else if noiseService.needsZoomIn {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption)
+                                    Text("Zoom in to see street noise").font(.caption2)
+                                }
+                                .padding(8).background(.regularMaterial).cornerRadius(8)
+                            } else if !noiseService.roads.isEmpty {
+                                Text("\(noiseService.roads.count) roads loaded").font(.caption2)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(.regularMaterial).cornerRadius(8)
+                            }
+                        }
+                    }
+                    .padding(.leading, 12)
+                    .padding(.bottom, pinnedLocation != nil ? 320 : 90)
                     Spacer()
                     VStack(spacing: 10) {
                         zoomControls
@@ -113,14 +135,11 @@ struct ContentView: View {
             UserAnnotation()
 
             if selectedCategory == .noise {
-                // Road-following buffer strips — outermost (quiet) drawn first,
-                // innermost (loud) painted on top → smooth gradient along streets
-                ForEach(noiseService.zones) { zone in
-                    let (r, g, b) = NoiseService.color(for: zone.dbLevel)
-                    let opacity = min(0.55, max(0.12, Double(zone.dbLevel - 40) / 45.0))
-                    MapPolygon(coordinates: zone.polygon)
-                        .foregroundStyle(Color(red: r, green: g, blue: b).opacity(opacity))
-                        .stroke(.clear, lineWidth: 0)
+                // Dynamic OSM-based road noise — every road colored by type/noise level
+                ForEach(noiseService.roads) { road in
+                    MapPolyline(coordinates: road.coordinates)
+                        .stroke(NoiseService.color(for: road.dbLevel).opacity(0.85),
+                                lineWidth: road.lineWidth)
                 }
             }
             if selectedCategory == .crime {
@@ -197,6 +216,10 @@ struct ContentView: View {
         .onMapCameraChange { context in
             currentCenter = context.region.center
             currentSpan   = context.region.span
+            // Live-fetch roads for noise layer as user pans/zooms
+            if selectedCategory == .noise {
+                noiseService.fetchForRegion(context.region)
+            }
         }
         .onLongPressGesture(minimumDuration: 0.5) {
             // Drop pin at current map center (long-press center)
@@ -297,6 +320,9 @@ struct ContentView: View {
                 ForEach(NeighborhoodCategory.all) { cat in
                     SidebarButton(category: cat, isSelected: selectedCategory == cat.id) {
                         selectedCategory = cat.id
+                        if cat.id == .noise {
+                            noiseService.fetchForRegion(MKCoordinateRegion(center: currentCenter, span: currentSpan))
+                        }
                     }
                 }
             }
@@ -380,7 +406,12 @@ struct ContentView: View {
                     HStack(spacing: 10) {
                         ForEach($categories) { $cat in
                             ScoreCardView(category: $cat, isSelected: selectedCategory == cat.id)
-                                .onTapGesture { selectedCategory = cat.id }
+                                .onTapGesture {
+                                    selectedCategory = cat.id
+                                    if cat.id == .noise {
+                                        noiseService.fetchForRegion(MKCoordinateRegion(center: currentCenter, span: currentSpan))
+                                    }
+                                }
                         }
                     }
                     .padding(.horizontal, 14)

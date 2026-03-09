@@ -15,10 +15,10 @@ struct ContentView: View {
     @StateObject private var populationService = PopulationService()
 
     @State private var mapRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 37.650, longitude: -122.150),
-        span: MKCoordinateSpan(latitudeDelta: 0.85, longitudeDelta: 0.85)
+        center: CLLocationCoordinate2D(latitude: 37.450, longitude: -122.050),
+        span: MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
     )
-    @State private var selectedCategory: CategoryType = .crime
+    @State private var selectedCategory: CategoryType = .population
     @State private var searchText = ""
     @State private var searchResults: [MKMapItem] = []
     @StateObject private var searchCompleter = SearchCompleterService()
@@ -26,8 +26,8 @@ struct ContentView: View {
     // Population / ZIP layer
     @State private var zipRegions: [ZIPCodeRegion] = ZIPCodeData.allZIPs()
     @State private var selectedZIP: ZIPCodeRegion?
-    @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.85, longitudeDelta: 0.85)
-    @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.650, longitude: -122.150)
+    @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
+    @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.450, longitude: -122.050)
     @State private var pinnedLocation: CLLocationCoordinate2D?
     @State private var pinnedAddress  = ""
     @State private var categories     = NeighborhoodCategory.all
@@ -131,8 +131,15 @@ struct ContentView: View {
         .ignoresSafeArea()
         .onAppear {
             locationService.requestPermission()
-            // Lazy load: only load the default layer (crime) on launch
-            loadLayerIfNeeded(.crime)
+            loadLayerIfNeeded(.population)
+        }
+        .onChange(of: locationService.location) { _, loc in
+            // Fly to user location the FIRST time we get a fix
+            guard let loc, currentCenter.latitude == 37.450 else { return }
+            let coord = loc.coordinate
+            currentCenter = coord
+            currentSpan   = MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
+            mapRegion     = MKCoordinateRegion(center: coord, span: currentSpan)
         }
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }

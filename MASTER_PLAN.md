@@ -10,14 +10,15 @@
 
 ## Table of Contents
 1. [Product Vision](#1-product-vision)
-2. [Technical Architecture](#2-technical-architecture)
-3. [10 Data Layers](#3-10-data-layers)
+2. [10 Data Layers](#2-10-data-layers)
+3. [Feature Spec](#3-feature-spec)
 4. [Completed Features](#4-completed-features)
 5. [Pending Features](#5-pending-features)
-6. [Known Issues & Rules](#6-known-issues--rules)
-7. [Data Coverage](#7-data-coverage)
+6. [Technical Architecture](#6-technical-architecture)
+7. [Performance Requirements](#7-performance-requirements)
 8. [File Structure](#8-file-structure)
-9. [Feature Spec](#9-feature-spec)
+9. [Data Coverage](#9-data-coverage)
+10. [Known Issues & Rules](#10-known-issues--rules)
 
 ---
 
@@ -35,29 +36,218 @@
 - **Lazy loading**: Data for a layer is only loaded when the user switches to it
 - **Silky smooth**: No jank in any operation, maintain 60fps at all times
 
-### Performance Red Lines (Non-negotiable)
+---
 
-| Operation | Requirement |
-|-----------|-------------|
-| Map pan / zoom | Always 60fps, no dropped frames |
-| Layer switch animation | < 16ms response, data loading is async and never blocks UI |
-| Bottom panel pop-up | < 200ms, smooth animation |
-| Search autocomplete suggestions | Appear < 150ms after input |
-| Map fly-to animation | Smooth animation, no dropped frames |
-| Crime heatmap rendering | Background thread computation, main thread only draws |
-| ZIP area tap highlight | Instant response (< 50ms) |
+## 2. 10 Data Layers
 
-### Performance Implementation Guidelines
-
-1. **Main thread is UI-only**: All data computation must run in `DispatchQueue.global` or `Task { }`
-2. **MapPolygon count control**: No more than 200 MapPolygons on the map at any time
-3. **Avoid ForEach rebuilds**: Use stable `id:` identifiers to prevent unnecessary SwiftUI view rebuilds
-4. **Image / render caching**: CGImage heatmap only redraws when region changes by more than 20%
-5. **Network request debouncing**: Overpass and similar network requests have 0.5s debounce to avoid frequent triggers during dragging
+| # | Layer | Rendering | Data Source | Coverage |
+|---|-------|-----------|-------------|----------|
+| 1 | Crime | `CrimeTileOverlay` (MKTileOverlay, background CGContext rendering) | Gaussian model | Full Bay Area |
+| 2 | Noise | `MKPolyline` (UIKit, <=200 roads) | OSM Overpass API real-time | Real-time dynamic |
+| 3 | Schools | `MKAnnotation` pins | Hardcoded 130+ schools | All 9 Bay Area counties |
+| 4 | Superfund | `MKAnnotation` pins | Hardcoded 62 sites | Full Bay Area |
+| 5 | Earthquake | `MKCircle` scaled by magnitude | USGS real-time API | Real-time |
+| 6 | Fire Hazard | `MKPolygon` | Hardcoded 22 CAL FIRE zones | Full Bay Area |
+| 7 | Electric Lines | `MKPolyline` | Hardcoded PG&E transmission corridors | Main lines only |
+| 8 | Supportive Housing | `MKAnnotation` pins | Hardcoded | Limited coverage |
+| 9 | Air Quality/Odor | `MKPolygon` | Open-Meteo API + hardcoded industrial zones | Full Bay Area |
+| 10 | Population | `MKPolygon` ZIP polygons + demographics sheet | Census TIGER 2023 JSON | 445 ZIPs |
 
 ---
 
-## 2. Technical Architecture
+## 3. Feature Spec
+
+### 3.1 Complete User Journey
+
+```
+Open app
+  |
+See Bay Area ZIP map (Population layer default, 445 ZIPs with yellow borders)
+GPS locates and map auto-flies to current position
+  |
+Tap a ZIP area (anywhere inside)
+  |
+Map centers on that ZIP (visible area center), demographics panel pops up at bottom
+Tap another ZIP -> panel seamlessly switches (no dismiss)
+  |
+Switch to Crime layer
+  |
+ZIP panel auto-closes; map shows crime heatmap
+  |
+Long-press a GPS point on the map (0.45s)
+  |
+Pin drops, bottom expands with Neighborhood Report (scores for each layer)
+  |
+Switch to Schools layer
+  |
+Neighborhood Report auto-closes; map shows school pins
+Tap a school pin -> detail sheet pops up
+  |
+Search "1234 Main St, Sunnyvale"
+  |
+Map flies to Sunnyvale, pin drops, bottom expands with Neighborhood Report
+View comprehensive scores, swipe through layer score cards
+```
+
+### 3.2 Population Layer (Core Feature)
+
+**Visual Design**
+- 445 Census TIGER ZIP areas, gold border (0.88, 0.72, 0.0), 70% opacity, line width 1.5
+- Unselected: transparent fill, border only
+- Selected (highlighted): pink fill (systemPink 28%) + pink border (85%)
+
+**Tap Interaction**
+- **Tap anywhere inside a ZIP area** -> ray-casting detection -> highlight + bottom ZIPDemographicsSheet pops up
+- **Tap another ZIP while sheet is open** -> seamless switch (sheet content updates, no dismiss)
+- **Switch layers while sheet is open** -> sheet auto-closes (0.3s animation then clears)
+- **Long-press anywhere on map** -> open GPS coordinate Neighborhood Report (works on any layer)
+
+**ZIP Map Centering Rules**
+```
+Sheet height = 52% of screen
+Visible map height = 48%
+Visible area center = 24% from top (= full screen center 50% - 26%)
+-> mapRegion.center.latitude = zip.center.latitude - latSpan * 0.26
+```
+
+**ZIPDemographicsSheet Contains:**
+1. Racial distribution (horizontal stacked color bar)
+2. Household income distribution (vertical bar chart)
+3. Age distribution (horizontal bar chart)
+
+Data source: 2020 Census, `ZIPDemographics` struct fields (all Int):
+`population, medianIncome, white, hispanic, asian, black, other`
+`incUnder50, inc50_100, inc100_150, inc150_200, inc200Plus`
+`age_under18, age_18_34, age_35_54, age_55_74, age_75Plus`
+(`medianAge: Double` is the only Double field)
+
+### 3.3 Address Search
+
+- Autocomplete suggestions appear after the 1st character typed (`MKLocalSearchCompleter`)
+- Dropdown list has two tiers: fuzzy autocomplete (instant) + full results (with coordinates)
+- Tap any suggestion -> map flies to that address (span ~ 0.03 deg)
+- Red pin appears on the map, bottom panel expands with Neighborhood Report
+- Bay Area results are prioritized
+
+### 3.4 Crime Layer
+
+**MKTileOverlay Rendering Spec**
+- Background thread computes a 64x64 pixel heatmap for each Web Mercator tile (z/x/y)
+- `CrimeTileOverlay.crimeValue(lat:lon:) -> Double` is the standard API (called by both ContentView and tile renderer)
+- Gaussian model: each hotspot uses `exp(-distMiles^2 / radius^2)`, radius 2-5mi
+
+**Color Spec**
+| Value | Color |
+|-------|-------|
+| >0.72 | Dark red (191,13,13) |
+| 0.55-0.72 | Orange-red (235,64,20) |
+| 0.40-0.55 | Orange (250,133,38) |
+| 0.28-0.40 | Amber (254,184,89) |
+| 0.18-0.28 | Light amber (255,219,153) |
+| <0.18 | Beige (255,238,200) |
+
+### 3.5 Noise Layer
+
+- Each road is an `MKPolyline`, colored by type, max 200 roads
+- Highway (motorway): purple 5px; residential street: green 2px
+- `cancelFetch()` cancels old Overpass request when map pans
+
+### 3.6 Neighborhood Report Bottom Panel
+
+**Trigger: Long-press on map** (0.45s) -> pin drops -> bottom panel expands
+
+**Auto-closes when switching layers** (`onChange(of: selectedCategory)` clears `pinnedLocation`)
+
+**Score Computation Notes**
+- All `Double -> Int` conversions must first `guard value.isFinite` (R010)
+- `electricLines` branch: give 75 score + "Data loading..." when no data
+- `fireHazard` branch: `minDist` can be infinity, use `safeMinDist`
+
+### 3.7 Loading Strategy
+
+**Lazy Loading**
+- On app launch, only Population is loaded (JSON parsing, ~0.1s)
+- Other layers are loaded on switch via `loadLayerIfNeeded()`
+- Already-loaded layers have an `isLoaded: Bool` flag to prevent duplicate requests
+
+**Per-Layer Loading Strategy**
+
+| Layer | Network | Cache Strategy |
+|-------|---------|---------------|
+| Crime | No (pure computation) | Permanent tile cache (MapKit auto) |
+| Noise | Yes (Overpass) | Refresh when viewport moves >50% |
+| Schools | No | Permanent (hardcoded) |
+| Earthquake | Yes (USGS) | 30-minute TTL |
+| Fire / Electric / Housing | No | Permanent (hardcoded) |
+| Air Quality | Yes (Open-Meteo) | 1-hour TTL |
+| Population | No (JSON bundle) | Permanent |
+
+---
+
+## 4. Completed Features
+
+### UI
+- [x] Right-side vertical sidebar (10 layer toggle buttons, ScrollView to prevent clipping)
+- [x] Top address search bar (`MKLocalSearchCompleter` fuzzy autocomplete)
+- [x] Bottom Neighborhood Report panel (expands after **long-press**)
+- [x] Score cards (progress ring + A/B/C/D/F letter rating)
+- [x] Legend displayed in bottom-left corner
+- [x] Zoom +/- buttons (bottom-right)
+- [x] Current location button
+- [x] Active layer label (chip at top of map)
+
+### Map Layers
+- [x] Crime: MKTileOverlay pixel heatmap (smooth gradient, follows map dragging)
+- [x] Noise: Overpass API dynamically fetches each road, colored by road type; cancelFetch on pan
+- [x] Schools: 130+ schools, tap to show detail sheet
+- [x] Superfund: 62 sites, tap to show details
+- [x] Earthquake: USGS real-time, circle size = magnitude
+- [x] Fire Hazard: 22 CAL FIRE zones
+- [x] Electric Lines, Supportive Housing, Air Quality
+- [x] Population: 445 Census TIGER ZIPs, yellow borders, tap -> pink highlight + demographics sheet
+
+### Population Layer UX
+- [x] Tap **anywhere inside** a ZIP area to open ZIP info (ray-casting point-in-polygon detection)
+- [x] While ZIP info panel is open, tap another ZIP -> seamless content switch, **no dismiss-and-reopen**
+- [x] Long-press anywhere on map -> open GPS coordinate Neighborhood Report (works on any layer)
+- [x] Switching layers auto-closes ZIP panel (0.3s animation then clears selectedZIP)
+- [x] Switching layers auto-closes Neighborhood Report panel (clears pinnedLocation + scores)
+- [x] After ZIP selection, map flies to center on the **visible area center after sheet pop-up** (south offset = latSpan x 0.26)
+
+### Data
+- [x] Full 9-county Bay Area coverage (Santa Clara, Alameda, SF, San Mateo, Contra Costa, Marin, Sonoma, Napa, Solano)
+- [x] 445 Bay Area ZIP polygons (Census TIGER 2023, RDP simplified to ~80 points/ZIP)
+- [x] Default layer: Population (ZIP map visible on app launch)
+- [x] Default view: center (37.450, -122.050), span 0.06 deg (neighborhood level), auto-flies to GPS location
+
+### Bug Fixes (This Sprint)
+- [x] `Int(Double.infinity)` crash in `computeScores()` electricLines case
+- [x] Defensive fixes for remaining branches in the same function (noise zone, fire minDist)
+
+---
+
+## 5. Pending Features
+
+### High Priority
+- [ ] **Noise Layer UI**: Show spinner while loading, fallback to hardcoded data when Overpass fails
+- [ ] **Loading Animation**: Show spinner overlay when switching layers (spec written in 3.7)
+- [ ] **Supportive Housing Expansion**: Add SF, Oakland, Berkeley, San Mateo supportive housing data
+
+### Medium Priority
+- [ ] **Crime Details Real Data**: Integrate SF Open Data, Oakland Crime API to replace mock data
+- [ ] **School Rating Data**: Integrate GreatSchools API or CA School Dashboard data
+- [ ] **Electric Lines Expansion**: Add sub-115kV distribution lines
+- [ ] **Neighborhood Report Enhancement**: Add descriptive text for each layer (not just scores)
+
+### Low Priority
+- [ ] Dark mode support
+- [ ] iPad layout optimization
+- [ ] Share feature (screenshot + score card image generation)
+- [ ] Saved/favorited addresses
+
+---
+
+## 6. Technical Architecture
 
 | Layer | Technology | Notes |
 |-------|-----------|-------|
@@ -93,7 +283,7 @@
   - `static crimeValue(lat:lon:) -> Double` standard method
   - Background thread rendering, MapKit auto-caches tiles
 
-### ZIP Data Architecture (Important)
+### ZIP Data Architecture
 
 **Data source:** OpenDataDE/State-zip-code-GeoJSON (Census TIGER 2023)
 - CA raw file 71MB -> filtered to Bay Area -> 445 ZIPs
@@ -104,147 +294,27 @@
 
 ---
 
-## 3. 10 Data Layers
+## 7. Performance Requirements
 
-| # | Layer | Rendering | Data Source | Coverage |
-|---|-------|-----------|-------------|----------|
-| 1 | Crime | `CrimeTileOverlay` (MKTileOverlay, background CGContext rendering) | Gaussian model | Full Bay Area |
-| 2 | Noise | `MKPolyline` (UIKit, <=200 roads) | OSM Overpass API real-time | Real-time dynamic |
-| 3 | Schools | `MKAnnotation` pins | Hardcoded 130+ schools | All 9 Bay Area counties |
-| 4 | Superfund | `MKAnnotation` pins | Hardcoded 62 sites | Full Bay Area |
-| 5 | Earthquake | `MKCircle` scaled by magnitude | USGS real-time API | Real-time |
-| 6 | Fire Hazard | `MKPolygon` | Hardcoded 22 CAL FIRE zones | Full Bay Area |
-| 7 | Electric Lines | `MKPolyline` | Hardcoded PG&E transmission corridors | Main lines only |
-| 8 | Supportive Housing | `MKAnnotation` pins | Hardcoded | Limited coverage |
-| 9 | Air Quality/Odor | `MKPolygon` | Open-Meteo API + hardcoded industrial zones | Full Bay Area |
-| 10 | Population | `MKPolygon` ZIP polygons + demographics sheet | Census TIGER 2023 JSON | 445 ZIPs |
+### Red Lines (Non-negotiable)
 
----
+| Operation | Requirement |
+|-----------|-------------|
+| Map pan / zoom | Always 60fps, no dropped frames |
+| Layer switch animation | < 16ms response, data loading is async and never blocks UI |
+| Bottom panel pop-up | < 200ms, smooth animation |
+| Search autocomplete suggestions | Appear < 150ms after input |
+| Map fly-to animation | Smooth animation, no dropped frames |
+| Crime heatmap rendering | Background thread computation, main thread only draws |
+| ZIP area tap highlight | Instant response (< 50ms) |
 
-## 4. Completed Features
+### Implementation Guidelines
 
-### UI
-- [x] Right-side vertical sidebar (10 layer toggle buttons, ScrollView to prevent clipping)
-- [x] Top address search bar (`MKLocalSearchCompleter` fuzzy autocomplete)
-- [x] Bottom Neighborhood Report panel (expands after **long-press**)
-- [x] Score cards (progress ring + A/B/C/D/F letter rating)
-- [x] Legend displayed in bottom-left corner
-- [x] Zoom +/- buttons (bottom-right)
-- [x] Current location button
-- [x] Active layer label (chip at top of map)
-
-### Map Layers
-- [x] Crime: MKTileOverlay pixel heatmap (smooth gradient, follows map dragging)
-- [x] Noise: Overpass API dynamically fetches each road, colored by road type; cancelFetch on pan
-- [x] Schools: 130+ schools, tap to show detail sheet
-- [x] Superfund: 62 sites, tap to show details
-- [x] Earthquake: USGS real-time, circle size = magnitude
-- [x] Fire Hazard: 22 CAL FIRE zones
-- [x] Electric Lines, Supportive Housing, Air Quality
-- [x] Population: 445 Census TIGER ZIPs, yellow borders, tap -> pink highlight + demographics sheet
-
-### Population Layer UX (New)
-- [x] Tap **anywhere inside** a ZIP area to open ZIP info (ray-casting point-in-polygon detection)
-- [x] While ZIP info panel is open, tap another ZIP -> seamless content switch, **no dismiss-and-reopen**
-- [x] Long-press anywhere on map -> open GPS coordinate Neighborhood Report (works on any layer)
-- [x] Switching layers auto-closes ZIP panel (0.3s animation then clears selectedZIP)
-- [x] Switching layers auto-closes Neighborhood Report panel (clears pinnedLocation + scores)
-- [x] After ZIP selection, map flies to center on the **visible area center after sheet pop-up** (south offset = latSpan x 0.26)
-
-### Data
-- [x] Full 9-county Bay Area coverage (Santa Clara, Alameda, SF, San Mateo, Contra Costa, Marin, Sonoma, Napa, Solano)
-- [x] 445 Bay Area ZIP polygons (Census TIGER 2023, RDP simplified to ~80 points/ZIP)
-- [x] Default layer: Population (ZIP map visible on app launch)
-- [x] Default view: center (37.450, -122.050), span 0.06 deg (neighborhood level), auto-flies to GPS location
-
-### Bug Fixes (This Sprint)
-- [x] `Int(Double.infinity)` crash in `computeScores()` electricLines case
-- [x] Defensive fixes for remaining branches in the same function (noise zone, fire minDist)
-
----
-
-## 5. Pending Features
-
-### High Priority
-- [ ] **Noise Layer UI**: Show spinner while loading, fallback to hardcoded data when Overpass fails
-- [ ] **Loading Animation**: Show spinner overlay when switching layers (spec written in MASTER_PLAN 9.10)
-- [ ] **Supportive Housing Expansion**: Add SF, Oakland, Berkeley, San Mateo supportive housing data
-
-### Medium Priority
-- [ ] **Crime Details Real Data**: Integrate SF Open Data, Oakland Crime API to replace mock data
-- [ ] **School Rating Data**: Integrate GreatSchools API or CA School Dashboard data
-- [ ] **Electric Lines Expansion**: Add sub-115kV distribution lines
-- [ ] **Neighborhood Report Enhancement**: Add descriptive text for each layer (not just scores)
-
-### Low Priority
-- [ ] Dark mode support
-- [ ] iPad layout optimization
-- [ ] Share feature (screenshot + score card image generation)
-- [ ] Saved/favorited addresses
-
----
-
-## 6. Known Issues & Rules
-
-> After every bug fix, the lesson must be recorded here (to prevent repeating the same mistakes)
-
-### Rules Quick Reference
-
-| # | Rule | Summary |
-|---|------|---------|
-| R001 | CGImage premultiplied alpha | Use `CGContext.fill()` instead of manual byte format |
-| R002 | SwiftUI `.overlay()` placement | Place inside ZStack, add `.allowsHitTesting(false)` |
-| R003 | Xcode 16 auto-sync | Just place new files in the correct directory, no need to modify pbxproj |
-| R004 | Shell heredoc `$` expansion | Use Python scp for strings containing `$`, avoid heredoc |
-| R005 | Sidebar button clipping | Must use `ScrollView`, `maxHeight 380` |
-| R006 | MKLocalSearch fuzziness | Use `MKLocalSearchCompleter` for real-time autocomplete |
-| R007 | Gaussian decay units | Must use miles: `exp(-distMiles^2/radius^2)`, radius 2-5mi |
-| R008 | Swift literal arrays >5K lines | SourceKitService OOM crash, use bundled JSON instead |
-| R009 | PBXFileSystemSynchronized duplication | Manual pbxproj entry + auto-sync -> "Multiple commands produce" |
-| R010 | `Int(Double.infinity)` crash | `guard value.isFinite` before all `Int(someDouble)` conversions |
-| R011 | `.sheet(item:)` seamless switch | Use `.sheet(isPresented:)` + separate content state instead |
-
-### Detailed Explanations
-
-**R008 - Large Swift literal arrays crash Mac**
-- Problem: 32941-line `ZIPCodeData.swift` (445 ZIPs embedded as Swift array literals) -> SourceKitService >10GB RAM, Mac crashes
-- Lesson: **Never embed large datasets as Swift literals**, use bundled JSON loaded at runtime instead
-- Solution: `bayarea_zips.json` (693KB) + `ZIPCodeData.swift` (65 lines) runtime parsing
-
-**R010 - `Int(Double.infinity)` is undefined behavior in Swift**
-- Problem: `electricService.lines` is empty -> `minLineDistDeg` stays `Double.infinity` -> `Int(infinity)` -> EXC_BAD_INSTRUCTION
-- Swift does not perform safe conversion, it traps directly
-- Lesson: Always `guard value.isFinite` before any Double->Int conversion, or use `min(cap, Int(value))` as defense
-- Affected file: `ContentView.swift` `computeScores()` all branches
-
-**R011 - `.sheet(item:)` dismisses and re-presents when item changes**
-- Problem: When user taps another ZIP, `.sheet(item: $selectedZIP)` first dismisses the old sheet, then presents the new one -> animation flicker
-- Solution: `@State var showZIPSheet = false` + `.sheet(isPresented: $showZIPSheet)` + read `selectedZIP` inside the content
-- Key: `selectedZIP = newRegion` must come before `showZIPSheet = true` (batched in the same run loop)
-
-### Current Known Limitations
-- Overpass API times out (504) on Mac local testing; works fine on iOS device direct connection
-- Crime heatmap is a Gaussian model estimate, not real per-street crime data
-- School ratings are static hardcoded data, not from a real-time API
-- Supportive Housing data is sparse in SF, Oakland, Berkeley
-
----
-
-## 7. Data Coverage
-
-### Bay Area 9-County Coverage Status
-
-| County | Schools | Crime | Fire | ZIP Boundaries |
-|--------|---------|-------|------|----------------|
-| Santa Clara | 36 schools | Full | Full | Census TIGER |
-| Alameda | 29 schools | Full | Full | Census TIGER |
-| San Francisco | 13 schools | Full | Full | Census TIGER |
-| San Mateo | 16 schools | Full | Full | Census TIGER |
-| Contra Costa | 17 schools | Full | Full | Census TIGER |
-| Marin | 8 schools | Full | Full | Census TIGER |
-| Sonoma | 5 schools | Limited | Full | Census TIGER |
-| Napa | Limited | Limited | Limited | Census TIGER |
-| Solano | Limited | Vallejo only | Limited | Census TIGER |
+1. **Main thread is UI-only**: All data computation must run in `DispatchQueue.global` or `Task { }`
+2. **MapPolygon count control**: No more than 200 MapPolygons on the map at any time
+3. **Avoid ForEach rebuilds**: Use stable `id:` identifiers to prevent unnecessary SwiftUI view rebuilds
+4. **Image / render caching**: CGImage heatmap only redraws when region changes by more than 20%
+5. **Network request debouncing**: Overpass and similar network requests have 0.5s debounce to avoid frequent triggers during dragging
 
 ---
 
@@ -309,141 +379,64 @@ var onNoiseFetchCancel: () -> Void
 
 ---
 
-## 9. Feature Spec
+## 9. Data Coverage
 
-### 9.0 Population Layer (Core Feature)
+### Bay Area 9-County Coverage Status
 
-**Visual Design**
-- 445 Census TIGER ZIP areas, gold border (0.88, 0.72, 0.0), 70% opacity, line width 1.5
-- Unselected: transparent fill, border only
-- Selected (highlighted): pink fill (systemPink 28%) + pink border (85%)
-
-**Tap Interaction**
-- **Tap anywhere inside a ZIP area** -> ray-casting detection -> highlight + bottom ZIPDemographicsSheet pops up
-- **Tap another ZIP while sheet is open** -> seamless switch (sheet content updates, no dismiss)
-- **Switch layers while sheet is open** -> sheet auto-closes (0.3s animation then clears)
-- **Long-press anywhere on map** -> open GPS coordinate Neighborhood Report (works on any layer)
-
-**ZIP Map Centering Rules**
-```
-Sheet height = 52% of screen
-Visible map height = 48%
-Visible area center = 24% from top (= full screen center 50% - 26%)
--> mapRegion.center.latitude = zip.center.latitude - latSpan * 0.26
-```
-
-**ZIPDemographicsSheet Contains:**
-1. Racial distribution (horizontal stacked color bar)
-2. Household income distribution (vertical bar chart)
-3. Age distribution (horizontal bar chart)
-
-Data source: 2020 Census, `ZIPDemographics` struct fields (all Int):
-`population, medianIncome, white, hispanic, asian, black, other`
-`incUnder50, inc50_100, inc100_150, inc150_200, inc200Plus`
-`age_under18, age_18_34, age_35_54, age_55_74, age_75Plus`
-(`medianAge: Double` is the only Double field)
+| County | Schools | Crime | Fire | ZIP Boundaries |
+|--------|---------|-------|------|----------------|
+| Santa Clara | 36 schools | Full | Full | Census TIGER |
+| Alameda | 29 schools | Full | Full | Census TIGER |
+| San Francisco | 13 schools | Full | Full | Census TIGER |
+| San Mateo | 16 schools | Full | Full | Census TIGER |
+| Contra Costa | 17 schools | Full | Full | Census TIGER |
+| Marin | 8 schools | Full | Full | Census TIGER |
+| Sonoma | 5 schools | Limited | Full | Census TIGER |
+| Napa | Limited | Limited | Limited | Census TIGER |
+| Solano | Limited | Vallejo only | Limited | Census TIGER |
 
 ---
 
-### 9.1 Address Search
+## 10. Known Issues & Rules
 
-- Autocomplete suggestions appear after the 1st character typed (`MKLocalSearchCompleter`)
-- Dropdown list has two tiers: fuzzy autocomplete (instant) + full results (with coordinates)
-- Tap any suggestion -> map flies to that address (span ~ 0.03 deg)
-- Red pin appears on the map, bottom panel expands with Neighborhood Report
-- Bay Area results are prioritized
+> After every bug fix, the lesson must be recorded here (to prevent repeating the same mistakes)
 
----
+### Rules Quick Reference
 
-### 9.2 Crime Layer
+| # | Rule | Summary |
+|---|------|---------|
+| R001 | CGImage premultiplied alpha | Use `CGContext.fill()` instead of manual byte format |
+| R002 | SwiftUI `.overlay()` placement | Place inside ZStack, add `.allowsHitTesting(false)` |
+| R003 | Xcode 16 auto-sync | Just place new files in the correct directory, no need to modify pbxproj |
+| R004 | Shell heredoc `$` expansion | Use Python scp for strings containing `$`, avoid heredoc |
+| R005 | Sidebar button clipping | Must use `ScrollView`, `maxHeight 380` |
+| R006 | MKLocalSearch fuzziness | Use `MKLocalSearchCompleter` for real-time autocomplete |
+| R007 | Gaussian decay units | Must use miles: `exp(-distMiles^2/radius^2)`, radius 2-5mi |
+| R008 | Swift literal arrays >5K lines | SourceKitService OOM crash, use bundled JSON instead |
+| R009 | PBXFileSystemSynchronized duplication | Manual pbxproj entry + auto-sync -> "Multiple commands produce" |
+| R010 | `Int(Double.infinity)` crash | `guard value.isFinite` before all `Int(someDouble)` conversions |
+| R011 | `.sheet(item:)` seamless switch | Use `.sheet(isPresented:)` + separate content state instead |
 
-**MKTileOverlay Rendering Spec**
-- Background thread computes a 64x64 pixel heatmap for each Web Mercator tile (z/x/y)
-- `CrimeTileOverlay.crimeValue(lat:lon:) -> Double` is the standard API (called by both ContentView and tile renderer)
-- Gaussian model: each hotspot uses `exp(-distMiles^2 / radius^2)`, radius 2-5mi
+### Detailed Explanations
 
-**Color Spec**
-| Value | Color |
-|-------|-------|
-| >0.72 | Dark red (191,13,13) |
-| 0.55-0.72 | Orange-red (235,64,20) |
-| 0.40-0.55 | Orange (250,133,38) |
-| 0.28-0.40 | Amber (254,184,89) |
-| 0.18-0.28 | Light amber (255,219,153) |
-| <0.18 | Beige (255,238,200) |
+**R008 - Large Swift literal arrays crash Mac**
+- Problem: 32941-line `ZIPCodeData.swift` (445 ZIPs embedded as Swift array literals) -> SourceKitService >10GB RAM, Mac crashes
+- Lesson: **Never embed large datasets as Swift literals**, use bundled JSON loaded at runtime instead
+- Solution: `bayarea_zips.json` (693KB) + `ZIPCodeData.swift` (65 lines) runtime parsing
 
----
+**R010 - `Int(Double.infinity)` is undefined behavior in Swift**
+- Problem: `electricService.lines` is empty -> `minLineDistDeg` stays `Double.infinity` -> `Int(infinity)` -> EXC_BAD_INSTRUCTION
+- Swift does not perform safe conversion, it traps directly
+- Lesson: Always `guard value.isFinite` before any Double->Int conversion, or use `min(cap, Int(value))` as defense
+- Affected file: `ContentView.swift` `computeScores()` all branches
 
-### 9.3 Noise Layer
+**R011 - `.sheet(item:)` dismisses and re-presents when item changes**
+- Problem: When user taps another ZIP, `.sheet(item: $selectedZIP)` first dismisses the old sheet, then presents the new one -> animation flicker
+- Solution: `@State var showZIPSheet = false` + `.sheet(isPresented: $showZIPSheet)` + read `selectedZIP` inside the content
+- Key: `selectedZIP = newRegion` must come before `showZIPSheet = true` (batched in the same run loop)
 
-- Each road is an `MKPolyline`, colored by type, max 200 roads
-- Highway (motorway): purple 5px; residential street: green 2px
-- `cancelFetch()` cancels old Overpass request when map pans
-
----
-
-### 9.4 Neighborhood Report Bottom Panel
-
-**Trigger: Long-press on map** (0.45s) -> pin drops -> bottom panel expands
-
-**Auto-closes when switching layers** (`onChange(of: selectedCategory)` clears `pinnedLocation`)
-
-**Score Computation Notes**
-- All `Double -> Int` conversions must first `guard value.isFinite` (R010)
-- `electricLines` branch: give 75 score + "Data loading..." when no data
-- `fireHazard` branch: `minDist` can be infinity, use `safeMinDist`
-
----
-
-### 9.5 Performance & Loading Strategy
-
-**Lazy Loading**
-- On app launch, only Population is loaded (JSON parsing, ~0.1s)
-- Other layers are loaded on switch via `loadLayerIfNeeded()`
-- Already-loaded layers have an `isLoaded: Bool` flag to prevent duplicate requests
-
-**Per-Layer Loading Strategy**
-
-| Layer | Network | Cache Strategy |
-|-------|---------|---------------|
-| Crime | No (pure computation) | Permanent tile cache (MapKit auto) |
-| Noise | Yes (Overpass) | Refresh when viewport moves >50% |
-| Schools | No | Permanent (hardcoded) |
-| Earthquake | Yes (USGS) | 30-minute TTL |
-| Fire / Electric / Housing | No | Permanent (hardcoded) |
-| Air Quality | Yes (Open-Meteo) | 1-hour TTL |
-| Population | No (JSON bundle) | Permanent |
-
----
-
-### 9.6 Complete User Journey
-
-```
-Open app
-  |
-See Bay Area ZIP map (Population layer default, 445 ZIPs with yellow borders)
-GPS locates and map auto-flies to current position
-  |
-Tap a ZIP area (anywhere inside)
-  |
-Map centers on that ZIP (visible area center), demographics panel pops up at bottom
-Tap another ZIP -> panel seamlessly switches (no dismiss)
-  |
-Switch to Crime layer
-  |
-ZIP panel auto-closes; map shows crime heatmap
-  |
-Long-press a GPS point on the map (0.45s)
-  |
-Pin drops, bottom expands with Neighborhood Report (scores for each layer)
-  |
-Switch to Schools layer
-  |
-Neighborhood Report auto-closes; map shows school pins
-Tap a school pin -> detail sheet pops up
-  |
-Search "1234 Main St, Sunnyvale"
-  |
-Map flies to Sunnyvale, pin drops, bottom expands with Neighborhood Report
-View comprehensive scores, swipe through layer score cards
-```
+### Current Known Limitations
+- Overpass API times out (504) on Mac local testing; works fine on iOS device direct connection
+- Crime heatmap is a Gaussian model estimate, not real per-street crime data
+- School ratings are static hardcoded data, not from a real-time API
+- Supportive Housing data is sparse in SF, Oakland, Berkeley

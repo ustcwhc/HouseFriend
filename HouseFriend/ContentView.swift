@@ -26,6 +26,7 @@ struct ContentView: View {
     // Population / ZIP layer
     @State private var zipRegions: [ZIPCodeRegion] = ZIPCodeData.allZIPs()
     @State private var selectedZIP: ZIPCodeRegion?
+    @State private var highlightedZIPId: String? = nil
     @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
     @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.450, longitude: -122.050)
     @State private var pinnedLocation: CLLocationCoordinate2D?
@@ -167,6 +168,7 @@ struct ContentView: View {
             electricLines: electricService.lines,
             odorZones: odorMapZones(),
             zipRegions: zipRegions,
+            highlightedZIPId: highlightedZIPId,
             crimeMarkers: crimeIncidents,
             onCameraChange: { region in
                 currentCenter = region.center
@@ -183,8 +185,13 @@ struct ContentView: View {
             onSuperfundTap:{ selectedSuperfund = $0 },
             onHousingTap:  { selectedHousing   = $0 },
             onZIPTap: { region in
-                // .sheet(item:) guarantees content closure sees non-nil value
-                selectedZIP = region
+                highlightedZIPId = region.id
+                selectedZIP      = region
+                // Fly to ZIP center
+                let span = MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                currentCenter = region.center
+                currentSpan   = span
+                mapRegion     = MKCoordinateRegion(center: region.center, span: span)
             },
             onMapTap: { coord in
                 pinnedLocation = coord

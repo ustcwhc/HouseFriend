@@ -26,6 +26,7 @@ struct HFMapView: UIViewRepresentable {
     let electricLines: [ElectricLine]
     let odorZones: [MapZone]
     let zipRegions: [ZIPCodeRegion]
+    let highlightedZIPId: String?
     let crimeMarkers: [CrimeMarker]
 
     // MARK: - Callbacks → ContentView
@@ -60,6 +61,7 @@ struct HFMapView: UIViewRepresentable {
         context.coordinator.syncRegion(map)
         context.coordinator.updateOverlays(map)
         context.coordinator.updateAnnotations(map)
+        context.coordinator.updateZIPHighlight(map)
     }
 
     // MARK: - Coordinator
@@ -75,6 +77,11 @@ struct HFMapView: UIViewRepresentable {
 
         // Annotations: stable IDs → avoid flicker on re-render
         private var annotationMap: [String: HFAnnotation] = [:]
+
+        // ZIP polygon renderers — stored so we can update highlight color without
+        // removing/re-adding overlays (which would flicker)
+        private var zipRenderers: [String: MKPolygonRenderer] = [:]
+        private var lastHighlightedZIPId: String? = nil
 
         // Debounce: don't push region changes back while we're animating programmatically
         private var suppressRegionCallback = false
@@ -124,6 +131,7 @@ struct HFMapView: UIViewRepresentable {
             noisePolylines = []
             lastNoiseCount = -1   // B1 fix: reset so noise rebuild works if we return
             crimeTileOverlay = nil
+            zipRenderers = [:]
             activeCategory = cat
 
             switch cat {
@@ -301,14 +309,39 @@ struct HFMapView: UIViewRepresentable {
                     r.strokeColor = UIColor.systemBrown.withAlphaComponent(0.55)
                     r.lineWidth   = 1
                 } else if title.hasPrefix("zip:") {
-                    r.fillColor   = UIColor.systemBlue.withAlphaComponent(0.06)
-                    r.strokeColor = UIColor.systemGray.withAlphaComponent(0.40)
-                    r.lineWidth   = 1
+                    let zipId = String(title.dropFirst(4))
+                    applyZipStyle(r, selected: zipId == parent.highlightedZIPId)
+                    zipRenderers[zipId] = r
                 }
                 return r
             }
 
             return MKOverlayRenderer(overlay: overlay)
+        }
+
+        // MARK: - ZIP highlight
+
+        private func applyZipStyle(_ r: MKPolygonRenderer, selected: Bool) {
+            if selected {
+                r.fillColor   = UIColor.systemPink.withAlphaComponent(0.28)
+                r.strokeColor = UIColor.systemPink.withAlphaComponent(0.85)
+                r.lineWidth   = 2.5
+            } else {
+                // Light yellow border — clearly visible against map streets (gray)
+                r.fillColor   = UIColor(red: 1.0, green: 0.92, blue: 0.3, alpha: 0.06)
+                r.strokeColor = UIColor(red: 0.88, green: 0.72, blue: 0.0, alpha: 0.70)
+                r.lineWidth   = 1.5
+            }
+        }
+
+        func updateZIPHighlight(_ map: MKMapView) {
+            guard parent.highlightedZIPId != lastHighlightedZIPId else { return }
+            let newId = parent.highlightedZIPId
+            lastHighlightedZIPId = newId
+            for (zipId, renderer) in zipRenderers {
+                applyZipStyle(renderer, selected: zipId == newId)
+                renderer.setNeedsDisplay()
+            }
         }
 
         private func fireUIColor(_ severity: String) -> UIColor {

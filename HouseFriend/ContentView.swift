@@ -38,6 +38,16 @@ struct ContentView: View {
     @State private var selectedSchool: School?
     @State private var selectedSuperfund: SuperfundSite?
     @State private var selectedHousing: SupportiveHousingFacility?
+    @State private var apiErrorMessage: String?
+
+    /// Collects the first non-nil error from any service
+    private var activeServiceError: String? {
+        earthquakeService.errorMessage ??
+        crimeService.errorMessage ??
+        airQualityService.errorMessage ??
+        electricService.errorMessage ??
+        noiseService.errorMessage
+    }
 
     var body: some View {
         ZStack {
@@ -129,6 +139,34 @@ struct ContentView: View {
                 }
             }
 
+            // ── API Error Banner ─────────────────────────────────────────────
+            if let error = apiErrorMessage {
+                VStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Button { withAnimation { apiErrorMessage = nil } } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(.regularMaterial)
+                    .cornerRadius(10)
+                    .shadow(color: .black.opacity(0.15), radius: 4)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 160)
+                    Spacer()
+                }
+                .allowsHitTesting(true)
+                .zIndex(15)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             // ── ZIP Bottom Drawer ────────────────────────────────────────────
             // Custom overlay in same ZStack → selectedZIP changes propagate
             // instantly without any .sheet() modal sync issues.
@@ -149,6 +187,15 @@ struct ContentView: View {
         .onAppear {
             locationService.requestPermission()
             loadLayerIfNeeded(.population)
+        }
+        .onChange(of: activeServiceError) { _, error in
+            if let error {
+                withAnimation { apiErrorMessage = error }
+                // Auto-dismiss after 5 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    withAnimation { apiErrorMessage = nil }
+                }
+            }
         }
         .onChange(of: locationService.location) { _, loc in
             // Fly to user location the FIRST time we get a fix

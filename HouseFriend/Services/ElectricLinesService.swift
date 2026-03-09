@@ -11,17 +11,22 @@ struct ElectricLine: Identifiable {
 class ElectricLinesService: ObservableObject {
     @Published var lines: [ElectricLine] = []
     @Published var isLoading = false
+    @Published var errorMessage: String?
 
     // HIFLD Electric Power Transmission Lines - Bay Area bounding box
     private let urlString = "https://services1.arcgis.com/Hp6G80Pky0om7QvQ/arcgis/rest/services/Electric_Power_Transmission_Lines/FeatureServer/0/query?where=1%3D1&geometry=%7B%22xmin%22%3A-122.6%2C%22ymin%22%3A36.8%2C%22xmax%22%3A-121.2%2C%22ymax%22%3A38.2%2C%22spatialReference%22%3A%7B%22wkid%22%3A4326%7D%7D&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&outFields=VOLTAGE%2CTYPE&f=geojson&resultRecordCount=500"
 
     func fetch() {
         isLoading = true
+        errorMessage = nil
         guard let url = URL(string: urlString) else { isLoading = false; return }
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
             defer { DispatchQueue.main.async { self?.isLoading = false } }
             guard let data = data, error == nil else {
-                DispatchQueue.main.async { self?.lines = Self.mockLines() }
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Electric lines API unavailable, using estimates"
+                    self?.lines = Self.mockLines()
+                }
                 return
             }
             do {

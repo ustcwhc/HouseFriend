@@ -323,11 +323,12 @@ Data source: 2020 Census, `ZIPDemographics` struct fields (all Int):
 ```
 HouseFriend/
 ├── bayarea_zips.json               # 445 Bay Area ZIP polygons (Census TIGER 2023, 693KB)
+├── GeoJSONParser.swift                # GeoJSON parsing utility
 ├── Models/
-│   ├── Category.swift              # CategoryType enum, NeighborhoodCategory
-│   ├── CrimeMarker.swift           # CrimeMarker, CrimeType
-│   ├── MapZone.swift               # MapZone (polygon + value)
-│   └── ZIPCodeData.swift           # ZIPCodeRegion, ZIPDemographics, runtime JSON loading (65 lines)
+│   ├── NeighborhoodCategory.swift     # CategoryType enum, NeighborhoodCategory
+│   ├── CrimeMarker.swift              # CrimeMarker, CrimeType
+│   ├── MapZone.swift                  # MapZone (polygon + value)
+│   └── ZIPCodeData.swift              # ZIPCodeRegion, ZIPDemographics, runtime JSON loading (65 lines)
 ├── Services/
 │   ├── AirQualityService.swift     # Open-Meteo API
 │   ├── CrimeService.swift          # SF Open Data + mock

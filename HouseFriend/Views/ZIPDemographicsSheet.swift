@@ -8,25 +8,26 @@ struct ZIPDemographicsSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    // Header
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("ZIP \(region.id)")
+
+                    // ── Header ──────────────────────────────────────────────
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("ZIP Code \(region.id)")
                             .font(.title2).fontWeight(.bold)
-                        Text(region.demographics.city)
-                            .font(.subheadline).foregroundColor(.secondary)
-                        HStack(spacing: 20) {
-                            statBadge("Population", value: formatNum(region.demographics.totalPopulation))
-                            statBadge("Median Age", value: "\(Int(region.demographics.medianAge))")
-                            statBadge("Median Income", value: "$\(formatNum(region.demographics.medianHouseholdIncome))")
+                        HStack(spacing: 12) {
+                            statBadge("Population",
+                                      value: formatNum(region.demographics.population))
+                            statBadge("Median Age",
+                                      value: "\(Int(region.demographics.medianAge))")
+                            statBadge("Median Income",
+                                      value: "$\(formatNum(region.demographics.medianIncome))")
                         }
-                        .padding(.top, 4)
                     }
                     .padding(.horizontal)
 
                     Divider()
 
-                    // 1. Race / Ethnicity
-                    sectionHeader("🧑‍🤝‍🧑 Race & Ethnicity")
+                    // ── Race / Ethnicity ────────────────────────────────────
+                    sectionHeader("🧑🏽‍🤝‍🧑🏻 Race & Ethnicity")
                     raceStackedBar(region.demographics)
                         .padding(.horizontal)
                     raceLegend(region.demographics)
@@ -34,31 +35,19 @@ struct ZIPDemographicsSheet: View {
 
                     Divider()
 
-                    // 2. Household Income
+                    // ── Household Income ────────────────────────────────────
                     sectionHeader("💰 Household Income")
                     incomeBarChart(region.demographics)
                         .padding(.horizontal)
-                    HStack {
-                        Text("Median: $\(formatNum(region.demographics.medianHouseholdIncome))/yr")
-                            .font(.caption).foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal)
 
                     Divider()
 
-                    // 3. Age Distribution
+                    // ── Age Distribution ────────────────────────────────────
                     sectionHeader("🎂 Age Distribution")
                     ageBarChart(region.demographics)
                         .padding(.horizontal)
-                    HStack {
-                        Text("Median Age: \(String(format: "%.1f", region.demographics.medianAge))")
-                            .font(.caption).foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal)
 
-                    Spacer(minLength: 40)
+                    Spacer(minLength: 32)
                 }
                 .padding(.top, 16)
             }
@@ -75,15 +64,15 @@ struct ZIPDemographicsSheet: View {
 
     func raceStackedBar(_ d: ZIPDemographics) -> some View {
         let items: [(String, Double, Color)] = [
-            ("White",    d.white,    .blue),
-            ("Hispanic", d.hispanic, Color.orange),
-            ("Asian",    d.asian,    .green),
-            ("Black",    d.black,    .purple),
-            ("Other",    d.other,    .gray),
+            ("White",    Double(d.white),    .blue),
+            ("Hispanic", Double(d.hispanic), .orange),
+            ("Asian",    Double(d.asian),    .green),
+            ("Black",    Double(d.black),    .purple),
+            ("Other",    Double(d.other),    .gray),
         ]
         return GeometryReader { geo in
             HStack(spacing: 0) {
-                ForEach(items, id: \.0) { name, pct, color in
+                ForEach(items, id: \.0) { _, pct, color in
                     if pct >= 3 {
                         ZStack {
                             Rectangle().fill(color.opacity(0.85))
@@ -104,15 +93,18 @@ struct ZIPDemographicsSheet: View {
     }
 
     func raceLegend(_ d: ZIPDemographics) -> some View {
-        let items: [(String, Double, Color)] = [
-            ("White \(Int(d.white))%",    d.white,    .blue),
-            ("Hispanic \(Int(d.hispanic))%", d.hispanic, .orange),
-            ("Asian \(Int(d.asian))%",    d.asian,    .green),
-            ("Black \(Int(d.black))%",    d.black,    .purple),
-            ("Other \(Int(d.other))%",    d.other,    .gray),
+        let items: [(String, Color)] = [
+            ("White \(d.white)%",       .blue),
+            ("Hispanic \(d.hispanic)%", .orange),
+            ("Asian \(d.asian)%",       .green),
+            ("Black \(d.black)%",       .purple),
+            ("Other \(d.other)%",       .gray),
         ]
-        return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-            ForEach(items, id: \.0) { name, _, color in
+        return LazyVGrid(
+            columns: [GridItem(.flexible()), GridItem(.flexible())],
+            spacing: 6
+        ) {
+            ForEach(items, id: \.0) { name, color in
                 HStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(color.opacity(0.85))
@@ -127,35 +119,34 @@ struct ZIPDemographicsSheet: View {
     // MARK: - Income Bar Chart
 
     func incomeBarChart(_ d: ZIPDemographics) -> some View {
-        let brackets: [(String, Double)] = [
-            ("<$25k",    d.incomeUnder25k),
-            ("$25-50k",  d.income25to50k),
-            ("$50-75k",  d.income50to75k),
-            ("$75-100k", d.income75to100k),
-            ("$100-150k",d.income100to150k),
-            ("$150k+",   d.incomeOver150k),
+        let brackets: [(String, Int)] = [
+            ("<$50k",     d.incUnder50),
+            ("$50–100k",  d.inc50_100),
+            ("$100–150k", d.inc100_150),
+            ("$150–200k", d.inc150_200),
+            ("$200k+",    d.inc200Plus),
         ]
-        let maxPct = brackets.map(\.1).max() ?? 1
+        let maxPct = Double(brackets.map(\.1).max() ?? 1)
 
         return VStack(spacing: 6) {
             ForEach(brackets, id: \.0) { label, pct in
                 HStack(spacing: 8) {
                     Text(label)
                         .font(.caption2).foregroundColor(.secondary)
-                        .frame(width: 70, alignment: .trailing)
+                        .frame(width: 76, alignment: .trailing)
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(Color.gray.opacity(0.12))
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(incomeColor(pct: pct, max: maxPct))
-                                .frame(width: geo.size.width * CGFloat(pct / 100))
+                                .fill(incomeColor(pct: Double(pct), max: maxPct))
+                                .frame(width: geo.size.width * CGFloat(Double(pct) / 100))
                         }
                     }
                     .frame(height: 22)
-                    Text("\(Int(pct))%")
+                    Text("\(pct)%")
                         .font(.caption2).foregroundColor(.secondary)
-                        .frame(width: 32, alignment: .leading)
+                        .frame(width: 30, alignment: .leading)
                 }
             }
         }
@@ -163,7 +154,7 @@ struct ZIPDemographicsSheet: View {
 
     func incomeColor(pct: Double, max: Double) -> Color {
         let ratio = pct / max
-        if ratio > 0.6 { return .green }
+        if ratio > 0.6  { return .green }
         if ratio > 0.35 { return .orange }
         return .red.opacity(0.8)
     }
@@ -171,14 +162,14 @@ struct ZIPDemographicsSheet: View {
     // MARK: - Age Bar Chart
 
     func ageBarChart(_ d: ZIPDemographics) -> some View {
-        let groups: [(String, Double, Color)] = [
-            ("0–17",  d.ageUnder18, Color(red: 0.2, green: 0.5, blue: 0.9)),
-            ("18–34", d.age18to34,  Color(red: 0.1, green: 0.4, blue: 0.8)),
-            ("35–54", d.age35to54,  Color(red: 0.1, green: 0.3, blue: 0.7)),
-            ("55–64", d.age55to64,  Color(red: 0.1, green: 0.25, blue: 0.6)),
-            ("65+",   d.age65plus,  Color(red: 0.1, green: 0.2, blue: 0.5)),
+        let groups: [(String, Int, Color)] = [
+            ("0–17",  d.age_under18, Color(red: 0.20, green: 0.55, blue: 0.90)),
+            ("18–34", d.age_18_34,   Color(red: 0.10, green: 0.45, blue: 0.80)),
+            ("35–54", d.age_35_54,   Color(red: 0.10, green: 0.35, blue: 0.70)),
+            ("55–74", d.age_55_74,   Color(red: 0.10, green: 0.25, blue: 0.60)),
+            ("75+",   d.age_75Plus,  Color(red: 0.10, green: 0.18, blue: 0.50)),
         ]
-        let maxPct = groups.map(\.1).max() ?? 1
+        let maxPct = Double(groups.map(\.1).max() ?? 1)
 
         return VStack(spacing: 6) {
             ForEach(groups, id: \.0) { label, pct, color in
@@ -192,14 +183,14 @@ struct ZIPDemographicsSheet: View {
                                 .fill(Color.gray.opacity(0.12))
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(color)
-                                .frame(width: geo.size.width * CGFloat(pct / maxPct))
+                                .frame(width: geo.size.width * CGFloat(Double(pct) / maxPct))
                         }
                     }
                     .frame(height: 22)
-                    let count = Int(Double(region.demographics.totalPopulation) * pct / 100)
-                    Text("\(Int(pct))% · \(formatNum(count))")
+                    let count = Int(Double(d.population) * Double(pct) / 100)
+                    Text("\(pct)% · \(formatNum(count))")
                         .font(.caption2).foregroundColor(.secondary)
-                        .frame(width: 80, alignment: .leading)
+                        .frame(width: 82, alignment: .leading)
                 }
             }
         }
@@ -224,8 +215,8 @@ struct ZIPDemographicsSheet: View {
     }
 
     func formatNum(_ n: Int) -> String {
-        if n >= 1_000_000 { return String(format: "%.1fM", Double(n)/1_000_000) }
-        if n >= 1_000     { return String(format: "%.0fK", Double(n)/1_000) }
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000     { return String(format: "%.0fK", Double(n) / 1_000) }
         return "\(n)"
     }
 }

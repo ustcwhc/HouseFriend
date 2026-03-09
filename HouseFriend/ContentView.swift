@@ -141,7 +141,8 @@ struct ContentView: View {
         .sheet(isPresented: $showZIPSheet) {
             if let zip = selectedZIP {
                 ZIPDemographicsSheet(region: zip)
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents([.fraction(0.52), .large])
+                    .presentationDragIndicator(.visible)
                     .presentationDragIndicator(.visible)
             }
         }
@@ -179,8 +180,12 @@ struct ContentView: View {
             onSuperfundTap:{ selectedSuperfund = $0 },
             onHousingTap:  { selectedHousing   = $0 },
             onZIPTap: { region in
-                selectedZIP   = region
-                showZIPSheet  = true
+                // Defer sheet presentation by one run-loop so didSelect completes
+                // before SwiftUI schedules the sheet animation
+                DispatchQueue.main.async {
+                    selectedZIP  = region
+                    showZIPSheet = true
+                }
             },
             onMapTap: { coord in
                 pinnedLocation = coord

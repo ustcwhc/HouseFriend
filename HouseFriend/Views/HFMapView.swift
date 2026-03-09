@@ -419,7 +419,16 @@ struct HFMapView: UIViewRepresentable {
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let map = gesture.view as? MKMapView,
                   gesture.state == .ended else { return }
-            let pt   = gesture.location(in: map)
+            let pt = gesture.location(in: map)
+            // Do NOT fire onMapTap when the user tapped an annotation view —
+            // that is handled by mapView(_:didSelect:). Firing both causes
+            // rapid double state-mutation that dismisses the sheet immediately.
+            let hitAnnotation = map.annotations.contains { ann in
+                guard let view = map.view(for: ann) else { return false }
+                // Expand hit area slightly for small labels
+                return view.frame.insetBy(dx: -8, dy: -8).contains(pt)
+            }
+            guard !hitAnnotation else { return }
             let coord = map.convert(pt, toCoordinateFrom: map)
             parent.onMapTap(coord)
         }

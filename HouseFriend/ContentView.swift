@@ -148,6 +148,7 @@ struct ContentView: View {
                         Text(error)
                             .font(.caption)
                             .foregroundColor(.primary)
+                            .accessibilityIdentifier("errorBannerText")
                         Spacer()
                         Button { withAnimation { apiErrorMessage = nil } } label: {
                             Image(systemName: "xmark.circle.fill")
@@ -312,6 +313,7 @@ struct ContentView: View {
                     .font(.title3).padding(.leading, 16)
                 Text("HouseFriend")
                     .font(.headline).fontWeight(.bold)
+                    .accessibilityIdentifier("appTitle")
                 Spacer()
                 // Active layer chip
                 HStack(spacing: 5) {
@@ -338,6 +340,7 @@ struct ContentView: View {
         HStack {
             Image(systemName: "magnifyingglass").foregroundColor(.gray)
             TextField("Search address or place...", text: $searchText)
+                .accessibilityIdentifier("searchField")
                 .autocorrectionDisabled()
                 .onSubmit { performSearch() }
                 .onChange(of: searchText) { _, v in
@@ -442,6 +445,7 @@ struct ContentView: View {
         .cornerRadius(12)
         .shadow(radius: 4)
         .padding(.trailing, 6)
+        .accessibilityIdentifier("layerSidebar")
     }
 
     // MARK: - Empty State
@@ -453,6 +457,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Search any address")
                         .font(.subheadline).fontWeight(.semibold)
+                        .accessibilityIdentifier("emptyStateHint")
                     Text("Get a full neighborhood safety report")
                         .font(.caption).foregroundColor(.secondary)
                 }
@@ -490,8 +495,10 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Neighborhood Report")
                         .font(.headline).fontWeight(.semibold)
+                        .accessibilityIdentifier("neighborhoodReportTitle")
                     Text(pinnedAddress)
                         .font(.caption).foregroundColor(.secondary).lineLimit(2)
+                        .accessibilityIdentifier("pinnedAddress")
                 }
                 Spacer()
                 overallScoreBadge
@@ -508,6 +515,7 @@ struct ContentView: View {
                     Spacer()
                     ProgressView("Analyzing neighborhood...")
                         .padding()
+                        .accessibilityIdentifier("scoringProgress")
                     Spacer()
                 }
             } else {
@@ -1178,6 +1186,7 @@ struct SidebarButton: View {
             .frame(width: 54, height: 38)
             .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? category.color : Color.clear))
         }
+        .accessibilityIdentifier("layer_\(category.id.rawValue)")
     }
 
     func shortName(_ name: String) -> String {

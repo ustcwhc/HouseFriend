@@ -9,10 +9,12 @@ struct AirQualityData {
 class AirQualityService: ObservableObject {
     @Published var data: AirQualityData?
     @Published var isLoading = false
+    @Published var errorMessage: String?
 
     /// Uses Open-Meteo Air Quality API — completely free, no API key needed
     func fetch(lat: Double, lon: Double) {
         isLoading = true
+        errorMessage = nil
         let urlString = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=\(lat)&longitude=\(lon)&current=us_aqi,pm2_5,european_aqi"
         guard let url = URL(string: urlString) else { useFallback(); return }
 
@@ -22,7 +24,11 @@ class AirQualityService: ObservableObject {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let current = json["current"] as? [String: Any],
                   let aqi = current["us_aqi"] as? Int else {
-                DispatchQueue.main.async { self?.useFallback() }
+                AppLogger.network.warning("Air quality fetch failed, using fallback AQI")
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Air quality data unavailable, using estimate"
+                    self?.useFallback()
+                }
                 return
             }
             DispatchQueue.main.async {

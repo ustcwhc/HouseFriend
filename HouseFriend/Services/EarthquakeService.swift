@@ -12,16 +12,28 @@ struct EarthquakeEvent: Identifiable {
 class EarthquakeService: ObservableObject {
     @Published var events: [EarthquakeEvent] = []
     @Published var isLoading = false
+    @Published var errorMessage: String?
 
     // USGS Earthquake API - past 30 days, magnitude >= 2.5, Bay Area bounding box
-    private let urlString = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=2025-09-01&minmagnitude=2.5&minlatitude=36.8&maxlatitude=38.0&minlongitude=-122.6&maxlongitude=-121.2&orderby=magnitude"
+    private var urlString: String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        let startDate = Date().addingTimeInterval(-30 * 86400)
+        let start = formatter.string(from: startDate)
+        return "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=\(start)&minmagnitude=2.5&minlatitude=36.8&maxlatitude=38.0&minlongitude=-122.6&maxlongitude=-121.2&orderby=magnitude"
+    }
 
     func fetch() {
         isLoading = true
+        errorMessage = nil
         guard let url = URL(string: urlString) else { return }
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
             defer { DispatchQueue.main.async { self?.isLoading = false } }
-            guard let data = data, error == nil else { return }
+            guard let data = data, error == nil else {
+                AppLogger.network.error("Earthquake fetch failed: \(error?.localizedDescription ?? "no data")")
+                DispatchQueue.main.async { self?.errorMessage = "Earthquake data unavailable" }
+                return
+            }
             do {
                 let decoded = try JSONDecoder().decode(USGSResponse.self, from: data)
                 let events = decoded.features.compactMap { feature -> EarthquakeEvent? in
@@ -33,9 +45,11 @@ class EarthquakeService: ObservableObject {
                         date: Date(timeIntervalSince1970: Double(feature.properties.time) / 1000.0)
                     )
                 }
+                AppLogger.network.info("Earthquake: fetched \(events.count) events")
                 DispatchQueue.main.async { self?.events = events }
             } catch {
-                print("Earthquake parse error: \(error)")
+                AppLogger.network.error("Earthquake parse error: \(error.localizedDescription)")
+                DispatchQueue.main.async { self?.errorMessage = "Failed to parse earthquake data" }
             }
         }.resume()
     }

@@ -152,11 +152,12 @@ class NoiseService: ObservableObject {
             guard let self else { return }
 
             if let error = error {
-                // Try next mirror
+                AppLogger.network.warning("Noise fetch failed (\(urlStr)): \(error.localizedDescription)")
                 let remaining = Array(mirrors.dropFirst())
                 if !remaining.isEmpty {
                     self.fetchFrom(mirrors: remaining, query: query)
                 } else {
+                    AppLogger.network.error("Noise: all Overpass mirrors exhausted")
                     DispatchQueue.main.async {
                         self.isLoading = false
                         self.errorMessage = "Network error: \(error.localizedDescription)"
@@ -166,11 +167,13 @@ class NoiseService: ObservableObject {
             }
 
             guard let data else {
+                AppLogger.network.warning("Noise: empty response from \(urlStr)")
                 DispatchQueue.main.async { self.isLoading = false }
                 return
             }
 
             let parsed = Self.parseOSMResponse(data)
+            AppLogger.network.info("Noise: parsed \(parsed.count) roads")
             DispatchQueue.main.async {
                 self.roads = parsed
                 self.isLoading = false

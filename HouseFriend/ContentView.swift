@@ -38,6 +38,16 @@ struct ContentView: View {
     @State private var selectedSchool: School?
     @State private var selectedSuperfund: SuperfundSite?
     @State private var selectedHousing: SupportiveHousingFacility?
+    @State private var apiErrorMessage: String?
+
+    /// Collects the first non-nil error from any service
+    private var activeServiceError: String? {
+        earthquakeService.errorMessage ??
+        crimeService.errorMessage ??
+        airQualityService.errorMessage ??
+        electricService.errorMessage ??
+        noiseService.errorMessage
+    }
 
     var body: some View {
         ZStack {
@@ -129,6 +139,34 @@ struct ContentView: View {
                 }
             }
 
+            // ── API Error Banner ─────────────────────────────────────────────
+            if let error = apiErrorMessage {
+                VStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Button { withAnimation { apiErrorMessage = nil } } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(.regularMaterial)
+                    .cornerRadius(10)
+                    .shadow(color: .black.opacity(0.15), radius: 4)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 160)
+                    Spacer()
+                }
+                .allowsHitTesting(true)
+                .zIndex(15)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             // ── ZIP Bottom Drawer ────────────────────────────────────────────
             // Custom overlay in same ZStack → selectedZIP changes propagate
             // instantly without any .sheet() modal sync issues.
@@ -149,6 +187,15 @@ struct ContentView: View {
         .onAppear {
             locationService.requestPermission()
             loadLayerIfNeeded(.population)
+        }
+        .onChange(of: activeServiceError) { _, error in
+            if let error {
+                withAnimation { apiErrorMessage = error }
+                // Auto-dismiss after 5 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    withAnimation { apiErrorMessage = nil }
+                }
+            }
         }
         .onChange(of: locationService.location) { _, loc in
             // Fly to user location the FIRST time we get a fix
@@ -843,17 +890,28 @@ struct ContentView: View {
             span: MKCoordinateSpan(latitudeDelta: 1.5, longitudeDelta: 1.5)
         )
         req.resultTypes = [.address, .pointOfInterest]
-        MKLocalSearch(request: req).start { resp, _ in
-            DispatchQueue.main.async { self.searchResults = resp?.mapItems ?? [] }
+        let search = MKLocalSearch(request: req)
+        search.start { resp, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.apiErrorMessage = "Search failed: \(error.localizedDescription)"
+                    self.searchResults = []
+                } else {
+                    self.searchResults = resp?.mapItems ?? []
+                }
+            }
         }
     }
 
     func resolveCompletion(_ completion: SearchCompletion) {
-        // Convert a completer suggestion into a full map item
         let req = MKLocalSearch.Request(completion: completion.original)
-        MKLocalSearch(request: req).start { resp, _ in
-            if let item = resp?.mapItems.first {
-                DispatchQueue.main.async { self.selectItem(item) }
+        MKLocalSearch(request: req).start { resp, error in
+            DispatchQueue.main.async {
+                if let item = resp?.mapItems.first {
+                    self.selectItem(item)
+                } else if let error = error {
+                    self.apiErrorMessage = "Could not resolve address: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -887,201 +945,43 @@ struct ContentView: View {
 
     func computeScores(coord: CLLocationCoordinate2D) {
         isLoadingScores = true
-        // Reset scores first
         for i in categories.indices { categories[i].score = nil; categories[i].scoreLabel = nil }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
             for i in categories.indices {
+                let result: ScoringService.ScoreResult
                 switch categories[i].id {
                 case .earthquake:
-                    let nearby = earthquakeService.events.filter {
-                        abs($0.coordinate.latitude - coord.latitude) < 0.2 &&
-                        abs($0.coordinate.longitude - coord.longitude) < 0.25
-                    }.count
-                    categories[i].score = max(20, 100 - nearby * 12)
-                    categories[i].scoreLabel = nearby == 0 ? "Low Risk" : nearby < 3 ? "Some Activity" : "High Activity"
+                    result = ScoringService.earthquakeScore(events: earthquakeService.events, coord: coord)
                 case .superfund:
-                    let nearbySites = superfundService.sites.filter {
-                        abs($0.coordinate.latitude - coord.latitude) < 0.12 &&
-                        abs($0.coordinate.longitude - coord.longitude) < 0.15
-                    }.sorted { ($0.distanceMiles ?? 99) < ($1.distanceMiles ?? 99) }
-                    let sfScore = max(10, 100 - nearbySites.count * 22)
-                    categories[i].score = sfScore
-                    if nearbySites.isEmpty {
-                        categories[i].scoreLabel = "No EPA sites nearby"
-                    } else if let closest = nearbySites.first, let dist = closest.distanceMiles {
-                        categories[i].scoreLabel = "\(nearbySites.count) sites · closest \(String(format:"%.1f",dist))mi"
-                    } else {
-                        categories[i].scoreLabel = "\(nearbySites.count) EPA site(s) nearby"
-                    }
+                    result = ScoringService.superfundScore(sites: superfundService.sites, coord: coord)
                 case .milpitasOdor:
-                    let aqi = airQualityService.data?.aqi ?? 55
-                    let aqiScore = aqi <= 50 ? 95 : aqi <= 100 ? 75 : aqi <= 150 ? 50 : 25
-                    categories[i].score = aqiScore
-                    categories[i].scoreLabel = airQualityService.data?.category ?? "Moderate"
+                    result = ScoringService.airQualityScore(data: airQualityService.data)
                 case .crime:
-                    categories[i].score = crimeService.stats.score
-                    categories[i].scoreLabel = crimeService.stats.label
+                    result = ScoringService.crimeScore(stats: crimeService.stats)
                 case .fireHazard:
-                    // Find nearest fire hazard zone using point-in-polygon or proximity
-                    var worstSeverity = "None"
-                    var minDist = Double.infinity
-                    for zone in fireService.hazardZones {
-                        // Check proximity to zone polygon vertices
-                        for pt in zone.coordinates {
-                            let d = sqrt(pow(pt.latitude - coord.latitude, 2) + pow(pt.longitude - coord.longitude, 2))
-                            if d < minDist {
-                                minDist = d
-                                worstSeverity = zone.severity
-                            }
-                        }
-                    }
-                    // Also check point-in-polygon for each zone
-                    for zone in fireService.hazardZones {
-                        if pointInPolygon(coord, polygon: zone.coordinates) {
-                            worstSeverity = zone.severity
-                            minDist = 0
-                            break
-                        }
-                    }
-                    let fireScore: Int
-                    let fireLabel: String
-                    let safeMinDist = minDist.isFinite ? minDist : 999.0
-                    switch worstSeverity {
-                    case "Extreme":
-                        fireScore = 25; fireLabel = "Extreme Fire Risk"
-                    case "Very High":
-                        fireScore = safeMinDist < 0.05 ? 40 : 55; fireLabel = "Very High Fire Risk"
-                    case "High":
-                        fireScore = safeMinDist < 0.05 ? 60 : 72; fireLabel = "High Fire Risk"
-                    default:
-                        fireScore = 88; fireLabel = "Low Fire Risk"
-                    }
-                    categories[i].score = fireScore
-                    categories[i].scoreLabel = fireLabel
+                    result = ScoringService.fireScore(zones: fireService.hazardZones, coord: coord)
                 case .schools:
-                    let nearbySchools = schoolService.schools.filter {
-                        abs($0.coordinate.latitude - coord.latitude) < 0.05 &&
-                        abs($0.coordinate.longitude - coord.longitude) < 0.06
-                    }.sorted {
-                        let d0 = pow($0.coordinate.latitude-coord.latitude,2)+pow($0.coordinate.longitude-coord.longitude,2)
-                        let d1 = pow($1.coordinate.latitude-coord.latitude,2)+pow($1.coordinate.longitude-coord.longitude,2)
-                        return d0 < d1
-                    }
-                    let avgRating = nearbySchools.isEmpty ? 6 :
-                        nearbySchools.map(\.rating).reduce(0,+) / nearbySchools.count
-                    let schoolScore = min(100, avgRating * 10 + (nearbySchools.count > 5 ? 5 : 0))
-                    categories[i].score = schoolScore
-                    if let top = nearbySchools.first {
-                        categories[i].scoreLabel = "\(nearbySchools.count) schools · avg \(avgRating)/10"
-                    } else {
-                        categories[i].scoreLabel = "No schools found nearby"
-                    }
+                    result = ScoringService.schoolScore(schools: schoolService.schools, coord: coord)
                 case .noise:
-                    // Find loudest noise zone containing or nearest to coordinate
-                    var loudestDb = 40
-                    for zone in noiseService.zones {
-                        if pointInPolygon(coord, polygon: zone.polygon) {
-                            if zone.dbLevel > loudestDb { loudestDb = zone.dbLevel }
-                        }
-                    }
-                    // If not inside any zone, find nearest zone
-                    if loudestDb == 40 {
-                        var nearestDist = Double.infinity
-                        for zone in noiseService.zones {
-                            for pt in zone.polygon {
-                                let d = sqrt(pow(pt.latitude - coord.latitude, 2) + pow(pt.longitude - coord.longitude, 2))
-                                if d < nearestDist { nearestDist = d; let adj = nearestDist.isFinite ? Int(nearestDist * 500) : 0; loudestDb = max(loudestDb, zone.dbLevel - adj) }
-                            }
-                        }
-                    }
-                    let noiseScore = max(10, 100 - max(0, loudestDb - 40) * 2)
-                    let noiseLabel: String
-                    switch loudestDb {
-                    case 75...: noiseLabel = "Very Loud (>\(loudestDb)dB)"
-                    case 65...: noiseLabel = "Loud (~\(loudestDb)dB)"
-                    case 55...: noiseLabel = "Moderate (~\(loudestDb)dB)"
-                    default:    noiseLabel = "Quiet (<55dB)"
-                    }
-                    categories[i].score = noiseScore
-                    categories[i].scoreLabel = noiseLabel
+                    result = ScoringService.noiseScore(zones: noiseService.zones, roads: noiseService.roads, coord: coord)
                 case .electricLines:
-                    // Find minimum distance to any transmission line segment
-                    var minLineDistDeg = Double.infinity
-                    var closestVoltage = 0
-                    for line in electricService.lines {
-                        let coords = line.coordinates
-                        for j in 0..<max(0, coords.count-1) {
-                            let p1 = coords[j]; let p2 = coords[j+1]
-                            let dx = p2.longitude - p1.longitude
-                            let dy = p2.latitude  - p1.latitude
-                            let lenSq = dx*dx + dy*dy
-                            let t = lenSq > 0 ? max(0, min(1, ((coord.longitude-p1.longitude)*dx + (coord.latitude-p1.latitude)*dy)/lenSq)) : 0
-                            let nearLat = p1.latitude + t*dy
-                            let nearLon = p1.longitude + t*dx
-                            let d = sqrt(pow(coord.latitude-nearLat,2) + pow(coord.longitude-nearLon,2))
-                            if d < minLineDistDeg { minLineDistDeg = d; closestVoltage = line.voltage }
-                        }
-                    }
-                    // Guard: no lines loaded yet (infinity) — Int(infinity) crashes Swift
-                    guard minLineDistDeg.isFinite else {
-                        categories[i].score = 75
-                        categories[i].scoreLabel = "Data loading..."
-                        break
-                    }
-                    let distMilesElec = minLineDistDeg * 69.0
-                    let elecScore: Int
-                    let elecLabel: String
-                    if distMilesElec < 0.1 {
-                        elecScore = 45; elecLabel = "Very Close (\(closestVoltage)kV line)"
-                    } else if distMilesElec < 0.3 {
-                        elecScore = 62; elecLabel = "Nearby (\(closestVoltage)kV, \(String(format:"%.1f",distMilesElec))mi)"
-                    } else if distMilesElec < 1.0 {
-                        elecScore = 78; elecLabel = "\(String(format:"%.1f",distMilesElec))mi to nearest line"
-                    } else {
-                        elecScore = 92; elecLabel = "Low Exposure (>\(min(999, Int(distMilesElec)))mi)"
-                    }
-                    categories[i].score = elecScore
-                    categories[i].scoreLabel = elecLabel
+                    result = ScoringService.electricLineScore(lines: electricService.lines, coord: coord)
                 case .population:
-                    if let pop = populationService.info {
-                        let densityScore = max(20, min(95, 100 - (pop.density - 3000) / 120))
-                        categories[i].score = densityScore
-                        let densityK = String(format: "%.1f", Double(pop.density) / 1000.0)
-                        categories[i].scoreLabel = "\(densityK)k/sq mi · \(pop.cityName)"
-                    } else {
-                        categories[i].score = 70
-                        categories[i].scoreLabel = "~5k / sq mi"
-                    }
+                    result = ScoringService.populationScore(info: populationService.info)
                 case .supportiveHome:
-                    let cnt = housingService.facilities.filter {
-                        abs($0.coordinate.latitude - coord.latitude) < 0.05 &&
-                        abs($0.coordinate.longitude - coord.longitude) < 0.06
-                    }.count
-                    categories[i].score = max(40, 100 - cnt * 15)
-                    categories[i].scoreLabel = "\(cnt) facilities nearby"
+                    result = ScoringService.supportiveHomeScore(facilities: housingService.facilities, coord: coord)
                 }
+                categories[i].score = result.score
+                categories[i].scoreLabel = result.label
             }
             isLoadingScores = false
         }
     }
 
     // MARK: - Geometry Helpers
-    /// Ray-casting point-in-polygon test
     func pointInPolygon(_ point: CLLocationCoordinate2D, polygon: [CLLocationCoordinate2D]) -> Bool {
-        guard polygon.count >= 3 else { return false }
-        var inside = false
-        var j = polygon.count - 1
-        for i in 0..<polygon.count {
-            let xi = polygon[i].longitude; let yi = polygon[i].latitude
-            let xj = polygon[j].longitude; let yj = polygon[j].latitude
-            if ((yi > point.latitude) != (yj > point.latitude)) &&
-               (point.longitude < (xj - xi) * (point.latitude - yi) / (yj - yi) + xi) {
-                inside = !inside
-            }
-            j = i
-        }
-        return inside
+        ScoringService.pointInPolygon(point, polygon: polygon)
     }
 
 

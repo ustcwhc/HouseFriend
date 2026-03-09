@@ -106,24 +106,52 @@ enum ScoringService {
         return ScoreResult(score: score, label: label)
     }
 
-    static func noiseScore(zones: [NoiseZone], coord: CLLocationCoordinate2D) -> ScoreResult {
+    static func noiseScore(zones: [NoiseZone], roads: [NoiseRoad], coord: CLLocationCoordinate2D) -> ScoreResult {
         var loudestDb = 40
+
+        // Check polygon zones (legacy, may be empty)
         for zone in zones {
             if pointInPolygon(coord, polygon: zone.polygon) {
                 if zone.dbLevel > loudestDb { loudestDb = zone.dbLevel }
             }
         }
+
+        // Check proximity to noise roads (primary data source)
+        for road in roads {
+            let coords = road.coordinates
+            for j in 0..<max(0, coords.count - 1) {
+                let p1 = coords[j]; let p2 = coords[j + 1]
+                let dx = p2.longitude - p1.longitude
+                let dy = p2.latitude  - p1.latitude
+                let lenSq = dx * dx + dy * dy
+                let t = lenSq > 0 ? max(0, min(1, ((coord.longitude - p1.longitude) * dx + (coord.latitude - p1.latitude) * dy) / lenSq)) : 0
+                let nearLat = p1.latitude + t * dy
+                let nearLon = p1.longitude + t * dx
+                let distDeg = sqrt(pow(coord.latitude - nearLat, 2) + pow(coord.longitude - nearLon, 2))
+                let distMiles = distDeg * 69.0
+                // Sound attenuates with distance: reduce dB by ~6dB per doubling of distance
+                // At 0.05mi (~80m) from road, use full dB; attenuate beyond
+                if distMiles < 0.5 {
+                    let attenuation = distMiles < 0.05 ? 0 : Int(6.0 * log2(max(1, distMiles / 0.05)))
+                    let effectiveDb = max(40, road.dbLevel - attenuation)
+                    if effectiveDb > loudestDb { loudestDb = effectiveDb }
+                }
+            }
+        }
+
+        // Fallback: check nearest zone vertex if still at baseline
         if loudestDb == 40 {
             for zone in zones {
                 for pt in zone.polygon {
                     let d = sqrt(pow(pt.latitude - coord.latitude, 2) + pow(pt.longitude - coord.longitude, 2))
-                    if d < Double.infinity {
-                        let adj = d.isFinite ? Int(d * 500) : 0
+                    if d.isFinite {
+                        let adj = Int(d * 500)
                         loudestDb = max(loudestDb, zone.dbLevel - adj)
                     }
                 }
             }
         }
+
         let score = max(10, 100 - max(0, loudestDb - 40) * 2)
         let label: String
         switch loudestDb {

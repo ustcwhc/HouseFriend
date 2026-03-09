@@ -964,7 +964,7 @@ struct ContentView: View {
                 case .schools:
                     result = ScoringService.schoolScore(schools: schoolService.schools, coord: coord)
                 case .noise:
-                    result = ScoringService.noiseScore(zones: noiseService.zones, coord: coord)
+                    result = ScoringService.noiseScore(zones: noiseService.zones, roads: noiseService.roads, coord: coord)
                 case .electricLines:
                     result = ScoringService.electricLineScore(lines: electricService.lines, coord: coord)
                 case .population:

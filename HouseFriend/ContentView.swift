@@ -970,6 +970,12 @@ struct ContentView: View {
                             if d < minLineDistDeg { minLineDistDeg = d; closestVoltage = line.voltage }
                         }
                     }
+                    // Guard: no lines loaded yet (infinity) — Int(infinity) crashes Swift
+                    guard minLineDistDeg.isFinite else {
+                        categories[i].score = 75
+                        categories[i].scoreLabel = "Data loading..."
+                        break
+                    }
                     let distMilesElec = minLineDistDeg * 69.0
                     let elecScore: Int
                     let elecLabel: String
@@ -980,7 +986,7 @@ struct ContentView: View {
                     } else if distMilesElec < 1.0 {
                         elecScore = 78; elecLabel = "\(String(format:"%.1f",distMilesElec))mi to nearest line"
                     } else {
-                        elecScore = 92; elecLabel = "Low Exposure (>\(Int(distMilesElec))mi)"
+                        elecScore = 92; elecLabel = "Low Exposure (>\(min(999, Int(distMilesElec)))mi)"
                     }
                     categories[i].score = elecScore
                     categories[i].scoreLabel = elecLabel

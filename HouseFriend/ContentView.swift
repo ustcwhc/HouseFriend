@@ -26,7 +26,6 @@ struct ContentView: View {
     // Population / ZIP layer
     @State private var zipRegions: [ZIPCodeRegion] = ZIPCodeData.allZIPs()
     @State private var selectedZIP: ZIPCodeRegion?
-    @State private var showZIPSheet = false
     @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.85, longitudeDelta: 0.85)
     @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.650, longitude: -122.150)
     @State private var pinnedLocation: CLLocationCoordinate2D?
@@ -138,13 +137,10 @@ struct ContentView: View {
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
         .sheet(item: $selectedHousing) { f in HousingDetailSheet(facility: f) }
-        .sheet(isPresented: $showZIPSheet) {
-            if let zip = selectedZIP {
-                ZIPDemographicsSheet(region: zip)
-                    .presentationDetents([.fraction(0.52), .large])
-                    .presentationDragIndicator(.visible)
-                    .presentationDragIndicator(.visible)
-            }
+        .sheet(item: $selectedZIP) { zip in
+            ZIPDemographicsSheet(region: zip)
+                .presentationDetents([.fraction(0.52), .large])
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -180,12 +176,8 @@ struct ContentView: View {
             onSuperfundTap:{ selectedSuperfund = $0 },
             onHousingTap:  { selectedHousing   = $0 },
             onZIPTap: { region in
-                // Defer sheet presentation by one run-loop so didSelect completes
-                // before SwiftUI schedules the sheet animation
-                DispatchQueue.main.async {
-                    selectedZIP  = region
-                    showZIPSheet = true
-                }
+                // .sheet(item:) guarantees content closure sees non-nil value
+                selectedZIP = region
             },
             onMapTap: { coord in
                 pinnedLocation = coord

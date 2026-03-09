@@ -24,6 +24,7 @@ class AirQualityService: ObservableObject {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let current = json["current"] as? [String: Any],
                   let aqi = current["us_aqi"] as? Int else {
+                AppLogger.network.warning("Air quality fetch failed, using fallback AQI")
                 DispatchQueue.main.async {
                     self?.errorMessage = "Air quality data unavailable, using estimate"
                     self?.useFallback()

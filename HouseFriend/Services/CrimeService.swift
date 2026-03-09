@@ -19,10 +19,12 @@ class CrimeService: ObservableObject {
     @Published var incidents: [CrimeIncident] = []
     @Published var stats: CrimeStats = CrimeStats(score: 70, label: "Moderate", incidentCount: 0)
     @Published var isLoading = false
+    @Published var errorMessage: String?
 
     /// Uses CA DOJ OpenJustice API — returns county/city level crime data
     func fetchNear(lat: Double, lon: Double) {
         isLoading = true
+        errorMessage = nil
         // Try SF Open Data as fallback (more reliable endpoint)
         let sfUrl = "https://data.sfgov.org/resource/wg3w-h783.json?$limit=100&$order=report_datetime%20DESC"
         guard let url = URL(string: sfUrl) else {
@@ -34,7 +36,10 @@ class CrimeService: ObservableObject {
             guard let data = data, error == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                   !json.isEmpty else {
-                DispatchQueue.main.async { self?.loadMockData(lat: lat, lon: lon) }
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Crime data unavailable, using estimates"
+                    self?.loadMockData(lat: lat, lon: lon)
+                }
                 return
             }
 

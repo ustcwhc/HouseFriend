@@ -32,7 +32,8 @@ class CrimeTileOverlay: MKTileOverlay {
         guard maxLat > 36.8 && minLat < 38.9 &&
               maxLon > -123.5 && minLon < -121.0 else { return nil }
 
-        let size = 64  // render at 64×64; MKTileOverlay scales to 256 with bilinear smoothing
+        // Scale resolution with zoom: higher zoom = sharper detail, lower zoom = faster render
+        let size = z >= 14 ? 128 : z >= 11 ? 96 : 64
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
         let image = renderer.image { ctx in
             let cg = ctx.cgContext

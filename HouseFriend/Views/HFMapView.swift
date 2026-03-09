@@ -37,6 +37,7 @@ struct HFMapView: UIViewRepresentable {
     var onZIPTap: (ZIPCodeRegion) -> Void = { _ in }
     var onMapTap: (CLLocationCoordinate2D) -> Void = { _ in }
     var onNoiseFetchCancel: () -> Void = {}
+    var onMapLongPress: (CLLocationCoordinate2D) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -47,11 +48,18 @@ struct HFMapView: UIViewRepresentable {
         map.showsCompass = false
         map.setRegion(region, animated: false)
 
-        // Tap to pin a location (pass through to ContentView)
+        // Tap: annotation selection / ZIP polygon detection
         let tap = UITapGestureRecognizer(target: context.coordinator,
                                          action: #selector(Coordinator.handleTap(_:)))
         tap.delegate = context.coordinator
         map.addGestureRecognizer(tap)
+
+        // Long press: drop GPS pin + open neighborhood report
+        let lp = UILongPressGestureRecognizer(target: context.coordinator,
+                                              action: #selector(Coordinator.handleLongPress(_:)))
+        lp.minimumPressDuration = 0.45
+        lp.delegate = context.coordinator
+        map.addGestureRecognizer(lp)
 
         return map
     }
@@ -474,6 +482,15 @@ struct HFMapView: UIViewRepresentable {
             }
 
             parent.onMapTap(coord)
+        }
+
+        @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+            guard gesture.state == .began,
+                  let map = gesture.view as? MKMapView else { return }
+            let pt    = gesture.location(in: map)
+            let coord = map.convert(pt, toCoordinateFrom: map)
+            // Long press always opens GPS neighborhood report, regardless of layer
+            parent.onMapLongPress(coord)
         }
 
         // Ray-casting point-in-polygon (works in lon/lat space — fine for small areas)

@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var zipRegions: [ZIPCodeRegion] = ZIPCodeData.allZIPs()
     @State private var selectedZIP: ZIPCodeRegion?
     @State private var highlightedZIPId: String? = nil
+    @State private var showZIPSheet = false
     @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
     @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.450, longitude: -122.050)
     @State private var pinnedLocation: CLLocationCoordinate2D?
@@ -142,13 +143,37 @@ struct ContentView: View {
             currentSpan   = MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
             mapRegion     = MKCoordinateRegion(center: coord, span: currentSpan)
         }
+        .onChange(of: selectedCategory) { _, _ in
+            // Auto-dismiss ZIP sheet when leaving Population layer
+            if showZIPSheet {
+                showZIPSheet = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    selectedZIP      = nil
+                    highlightedZIPId = nil
+                }
+            }
+            // Auto-dismiss neighborhood panel when switching any layer
+            if pinnedLocation != nil {
+                pinnedLocation = nil
+                pinnedAddress  = ""
+                for i in categories.indices {
+                    categories[i].score      = nil
+                    categories[i].scoreLabel = nil
+                }
+            }
+        }
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
         .sheet(item: $selectedHousing) { f in HousingDetailSheet(facility: f) }
-        .sheet(item: $selectedZIP) { zip in
-            ZIPDemographicsSheet(region: zip)
-                .presentationDetents([.fraction(0.52), .large])
-                .presentationDragIndicator(.visible)
+        .sheet(isPresented: $showZIPSheet) {
+            // selectedZIP is set before showZIPSheet=true, so always non-nil here.
+            // When user taps a different ZIP, selectedZIP updates in place →
+            // sheet content refreshes WITHOUT dismissal.
+            if let zip = selectedZIP {
+                ZIPDemographicsSheet(region: zip)
+                    .presentationDetents([.fraction(0.52), .large])
+                    .presentationDragIndicator(.visible)
+            }
         }
     }
 
@@ -186,13 +211,10 @@ struct ContentView: View {
             onHousingTap:  { selectedHousing   = $0 },
             onZIPTap: { region in
                 highlightedZIPId = region.id
-                selectedZIP      = region
-                // Center ZIP in the VISIBLE map area above the sheet.
-                // Sheet fraction = 0.52 → visible height = 0.48 of screen.
-                // Visible center = 24% from top; map center = 50% from top.
-                // Offset map center SOUTH by 26% of latSpan so ZIP sits at visible center.
-                let latSpan = 0.05
-                let southOffset = latSpan * 0.26
+                selectedZIP      = region  // set content BEFORE showing sheet
+                showZIPSheet     = true    // sheet re-uses existing if already open → no dismiss
+                let latSpan      = 0.05
+                let southOffset  = latSpan * 0.26   // center in visible area above sheet
                 let adjustedCenter = CLLocationCoordinate2D(
                     latitude:  region.center.latitude - southOffset,
                     longitude: region.center.longitude
@@ -202,11 +224,15 @@ struct ContentView: View {
                 mapRegion     = MKCoordinateRegion(center: adjustedCenter, span: currentSpan)
             },
             onMapTap: { coord in
-                pinnedLocation = coord
-                computeScores(coord: coord)
+                // tap in non-population layers: no-op (handled by long press now)
+                _ = coord
             },
             onNoiseFetchCancel: {
                 noiseService.cancelFetch()
+            },
+            onMapLongPress: { coord in
+                pinnedLocation = coord
+                computeScores(coord: coord)
             }
         )
         .ignoresSafeArea()

@@ -890,17 +890,28 @@ struct ContentView: View {
             span: MKCoordinateSpan(latitudeDelta: 1.5, longitudeDelta: 1.5)
         )
         req.resultTypes = [.address, .pointOfInterest]
-        MKLocalSearch(request: req).start { resp, _ in
-            DispatchQueue.main.async { self.searchResults = resp?.mapItems ?? [] }
+        let search = MKLocalSearch(request: req)
+        search.start { resp, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.apiErrorMessage = "Search failed: \(error.localizedDescription)"
+                    self.searchResults = []
+                } else {
+                    self.searchResults = resp?.mapItems ?? []
+                }
+            }
         }
     }
 
     func resolveCompletion(_ completion: SearchCompletion) {
-        // Convert a completer suggestion into a full map item
         let req = MKLocalSearch.Request(completion: completion.original)
-        MKLocalSearch(request: req).start { resp, _ in
-            if let item = resp?.mapItems.first {
-                DispatchQueue.main.async { self.selectItem(item) }
+        MKLocalSearch(request: req).start { resp, error in
+            DispatchQueue.main.async {
+                if let item = resp?.mapItems.first {
+                    self.selectItem(item)
+                } else if let error = error {
+                    self.apiErrorMessage = "Could not resolve address: \(error.localizedDescription)"
+                }
             }
         }
     }

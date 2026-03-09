@@ -753,7 +753,7 @@ struct ContentView: View {
             incidents.append(CrimeMarker(
                 coordinate: CLLocationCoordinate2D(latitude: rLat, longitude: rLon),
                 type: type_,
-                count: Int.random(in: 1...max(1, Int(localVal * 8))),
+                count: Int.random(in: 1...max(1, Int(min(8.0, localVal * 8)))),
                 daysAgo: days
             ))
         }
@@ -894,13 +894,14 @@ struct ContentView: View {
                     }
                     let fireScore: Int
                     let fireLabel: String
+                    let safeMinDist = minDist.isFinite ? minDist : 999.0
                     switch worstSeverity {
                     case "Extreme":
                         fireScore = 25; fireLabel = "Extreme Fire Risk"
                     case "Very High":
-                        fireScore = minDist < 0.05 ? 40 : 55; fireLabel = "Very High Fire Risk"
+                        fireScore = safeMinDist < 0.05 ? 40 : 55; fireLabel = "Very High Fire Risk"
                     case "High":
-                        fireScore = minDist < 0.05 ? 60 : 72; fireLabel = "High Fire Risk"
+                        fireScore = safeMinDist < 0.05 ? 60 : 72; fireLabel = "High Fire Risk"
                     default:
                         fireScore = 88; fireLabel = "Low Fire Risk"
                     }
@@ -938,7 +939,7 @@ struct ContentView: View {
                         for zone in noiseService.zones {
                             for pt in zone.polygon {
                                 let d = sqrt(pow(pt.latitude - coord.latitude, 2) + pow(pt.longitude - coord.longitude, 2))
-                                if d < nearestDist { nearestDist = d; loudestDb = max(loudestDb, zone.dbLevel - Int(nearestDist * 500)) }
+                                if d < nearestDist { nearestDist = d; let adj = nearestDist.isFinite ? Int(nearestDist * 500) : 0; loudestDb = max(loudestDb, zone.dbLevel - adj) }
                             }
                         }
                     }

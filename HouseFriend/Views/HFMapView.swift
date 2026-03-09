@@ -35,6 +35,7 @@ struct HFMapView: UIViewRepresentable {
     var onHousingTap: (SupportiveHousingFacility) -> Void = { _ in }
     var onZIPTap: (ZIPCodeRegion) -> Void = { _ in }
     var onMapTap: (CLLocationCoordinate2D) -> Void = { _ in }
+    var onNoiseFetchCancel: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -121,6 +122,7 @@ struct HFMapView: UIViewRepresentable {
 
             map.removeOverlays(map.overlays)
             noisePolylines = []
+            lastNoiseCount = -1   // B1 fix: reset so noise rebuild works if we return
             crimeTileOverlay = nil
             activeCategory = cat
 
@@ -249,6 +251,13 @@ struct HFMapView: UIViewRepresentable {
         }
 
         // MARK: - MKMapViewDelegate
+
+        // B2: cancel in-flight Overpass requests when user starts panning
+        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            if parent.selectedCategory == .noise {
+                parent.onNoiseFetchCancel()
+            }
+        }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             guard !suppressRegionCallback else { return }

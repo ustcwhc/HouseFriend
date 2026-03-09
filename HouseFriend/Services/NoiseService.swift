@@ -53,6 +53,14 @@ class NoiseService: ObservableObject {
     private var lastFetchedRegion: MKCoordinateRegion?
     private let maxSpanForDetail: Double = 0.25   // ~17 miles — fetch residential
     private let maxSpanForMajor:  Double = 1.2    // ~80 miles — fetch only motorway/primary
+    private var currentTask: URLSessionDataTask?   // B2: cancellable in-flight request
+
+    /// Cancel any pending Overpass fetch (called by HFMapView when user starts panning)
+    func cancelFetch() {
+        currentTask?.cancel()
+        currentTask = nil
+        DispatchQueue.main.async { self.isLoading = false }
+    }
 
     // MARK: - Public API
 
@@ -139,7 +147,8 @@ class NoiseService: ObservableObject {
         let body = "data=" + (query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")
         request.httpBody = body.data(using: .utf8)
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        currentTask?.cancel()
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
 
             if let error = error {
@@ -166,7 +175,9 @@ class NoiseService: ObservableObject {
                 self.roads = parsed
                 self.isLoading = false
             }
-        }.resume()
+        }
+        currentTask = task
+        task.resume()
     }
 
     // MARK: - Parser

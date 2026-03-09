@@ -185,6 +185,9 @@ struct ContentView: View {
             onMapTap: { coord in
                 pinnedLocation = coord
                 computeScores(coord: coord)
+            },
+            onNoiseFetchCancel: {
+                noiseService.cancelFetch()
             }
         )
         .ignoresSafeArea()
@@ -726,12 +729,12 @@ struct ContentView: View {
         let types: [CrimeType] = [.violent, .property, .vehicle, .vandalism, .other]
         var incidents: [CrimeMarker] = []
         // Get crime density for this area
-        let baseValue = crimeValueAt(lat: lat, lon: lon)
+        let baseValue = CrimeTileOverlay.crimeValue(lat: lat, lon: lon)
         let count = Int(baseValue * 25) + 3  // more incidents in high-crime areas
         for _ in 0..<count {
             let rLat = lat + Double.random(in: -spread...spread)
             let rLon = lon + Double.random(in: -spread...spread)
-            let localVal = crimeValueAt(lat: rLat, lon: rLon)
+            let localVal = CrimeTileOverlay.crimeValue(lat: rLat, lon: rLon)
             let type_ = localVal > 0.6
                 ? (Bool.random() ? CrimeType.violent : CrimeType.property)
                 : types.randomElement()!
@@ -746,22 +749,6 @@ struct ContentView: View {
         crimeIncidents = incidents
     }
 
-    func crimeValueAt(lat: Double, lon: Double) -> Double {
-        let hotspots: [(Double, Double, Double, Double)] = [
-            (37.812, -122.285, 1.00, 2.5), (37.928, -122.362, 0.95, 2.0),
-            (37.782, -122.415, 0.90, 1.8), (37.770, -122.220, 0.88, 2.5),
-            (37.105, -122.255, 0.82, 2.0), (37.343, -121.875, 0.82, 3.0),
-            (37.727, -122.390, 0.80, 2.0), (37.998, -121.808, 0.78, 2.0),
-            (37.670, -122.082, 0.72, 2.0), (37.338, -121.888, 0.68, 2.5),
-        ]
-        let mpLat = 69.0, mpLon = 53.0
-        var v = 0.15
-        for h in hotspots {
-            let d2 = pow((lat-h.0)*mpLat, 2) + pow((lon-h.1)*mpLon, 2)
-            v += h.2 * exp(-d2/(h.3*h.3))
-        }
-        return max(0.10, min(1.0, v))
-    }
 
     func zoom(in zoomIn: Bool) {
         let factor: Double = zoomIn ? 0.5 : 2.0
@@ -1027,124 +1014,6 @@ struct ContentView: View {
         return inside
     }
 
-    // MARK: - Zone Data
-    func crimeMapZones() -> [MapZone] {
-        // Full Bay Area grid — every cell gets a crime value via Gaussian decay
-        // Distance computed in MILES for realistic neighborhood-scale hotspots
-        let cellSize = 0.055  // ~3.8 miles per cell
-        let minLat = 37.08, maxLat = 38.60
-        let minLon = -123.05, maxLon = -121.38
-
-        // (lat, lon, intensity 0-1, radius in miles)
-        // radius = half-decay distance
-        let hotspots: [(Double, Double, Double, Double)] = [
-            // ── Extreme ──────────────────────────────────────────────────────
-            (37.812, -122.285, 1.00, 2.5),  // West Oakland
-            (37.928, -122.362, 0.95, 2.0),  // Richmond Iron Triangle
-            (37.782, -122.415, 0.90, 1.8),  // SF Tenderloin/SoMa
-            // ── Very High ────────────────────────────────────────────────────
-            (37.770, -122.220, 0.88, 2.5),  // East Oakland / Fruitvale
-            (37.105, -122.255, 0.82, 2.0),  // Vallejo downtown
-            (37.343, -121.875, 0.82, 3.0),  // East San Jose
-            (37.727, -122.390, 0.80, 2.0),  // SF Bayview/Hunters Point
-            (37.998, -121.808, 0.78, 2.0),  // Antioch downtown
-            // ── High ─────────────────────────────────────────────────────────
-            (37.670, -122.082, 0.72, 2.0),  // Hayward central
-            (37.962, -122.343, 0.70, 1.8),  // San Pablo
-            (37.338, -121.888, 0.68, 2.5),  // Downtown San Jose
-            (38.021, -121.878, 0.65, 1.8),  // Pittsburg
-            (37.748, -122.198, 0.62, 2.0),  // San Leandro flatlands
-            (37.758, -122.415, 0.60, 1.8),  // SF Mission District
-            // ── Moderate ─────────────────────────────────────────────────────
-            (37.538, -121.975, 0.50, 2.5),  // Fremont central
-            (37.985, -122.058, 0.48, 2.0),  // Concord central
-            (37.976, -122.518, 0.45, 1.8),  // San Rafael downtown
-            (37.270, -121.868, 0.45, 2.5),  // South SJ
-            (37.630, -121.888, 0.45, 2.0),  // Union City
-            (37.432, -121.902, 0.42, 2.0),  // Milpitas central
-            (37.668, -122.088, 0.42, 1.5),  // Hayward East
-            (37.723, -122.150, 0.40, 1.8),  // San Leandro hills
-            (37.892, -122.298, 0.42, 1.5),  // Emeryville
-            // ── Low-Moderate ─────────────────────────────────────────────────
-            (37.372, -122.038, 0.30, 2.0),  // Sunnyvale central
-            (37.378, -121.988, 0.28, 2.0),  // Santa Clara
-            (37.550, -122.052, 0.28, 1.5),  // Newark
-            (37.698, -121.918, 0.32, 2.0),  // Livermore central
-            (37.698, -122.469, 0.32, 1.8),  // Daly City
-        ]
-
-        // Safe zones — suburban/wealthy areas with very low crime
-        // (lat, lon, suppression 0-1, radius in miles)
-        let safeZones: [(Double, Double, Double, Double)] = [
-            (37.322, -122.040, 0.55, 4.0),  // Cupertino
-            (37.265, -122.030, 0.60, 3.5),  // Saratoga
-            (37.230, -121.968, 0.55, 3.5),  // Los Gatos
-            (37.440, -122.165, 0.65, 4.5),  // Palo Alto
-            (37.378, -122.100, 0.60, 3.5),  // Los Altos
-            (37.863, -122.248, 0.60, 2.5),  // Piedmont
-            (37.882, -122.165, 0.65, 4.0),  // Orinda / Moraga
-            (37.862, -122.135, 0.60, 3.5),  // Moraga
-            (37.775, -122.252, 0.50, 3.0),  // Oakland Hills
-            (37.822, -121.978, 0.62, 4.0),  // San Ramon
-            (37.662, -121.878, 0.62, 3.5),  // Pleasanton
-            (37.702, -121.932, 0.62, 3.5),  // Dublin
-            (37.895, -122.512, 0.65, 5.0),  // Mill Valley / Marin affluent
-            (37.891, -122.510, 0.65, 3.0),  // Tiburon
-            (37.568, -122.320, 0.50, 4.0),  // San Mateo west
-            (37.485, -122.228, 0.55, 4.0),  // Redwood City hills
-            (37.928, -122.108, 0.52, 4.0),  // Walnut Creek / Lafayette
-            (37.328, -122.075, 0.48, 3.5),  // Monte Sereno / Los Gatos
-            (37.253, -121.815, 0.40, 3.0),  // Evergreen SJ
-            (37.908, -122.062, 0.48, 3.0),  // Walnut Creek east
-        ]
-
-        let milesPerDegreeLat = 69.0
-        let milesPerDegreeLon = 53.0  // at 37.5°N
-
-        var zones: [MapZone] = []
-        var lat = minLat
-        while lat < maxLat {
-            var lon = minLon
-            while lon < maxLon {
-                let clat = lat + cellSize / 2
-                let clon = lon + cellSize / 2
-
-                // (no land mask - render all cells for full coverage)
-
-                // Sum hotspot contributions using miles-based Gaussian
-                var crimeLevel = 0.15  // base — ensures all areas have visible color
-                for h in hotspots {
-                    let dlat = (clat - h.0) * milesPerDegreeLat
-                    let dlon = (clon - h.1) * milesPerDegreeLon
-                    let distMiles = sqrt(dlat*dlat + dlon*dlon)
-                    let r = h.3
-                    crimeLevel += h.2 * exp(-(distMiles*distMiles) / (r*r))
-                }
-
-                // Apply safe zone suppressions
-                for s in safeZones {
-                    let dlat = (clat - s.0) * milesPerDegreeLat
-                    let dlon = (clon - s.1) * milesPerDegreeLon
-                    let distMiles = sqrt(dlat*dlat + dlon*dlon)
-                    let r = s.3
-                    crimeLevel -= s.2 * exp(-(distMiles*distMiles) / (r*r))
-                }
-
-                crimeLevel = max(0.10, min(1.0, crimeLevel))
-
-                let coords = [
-                    CLLocationCoordinate2D(latitude: lat,            longitude: lon),
-                    CLLocationCoordinate2D(latitude: lat,            longitude: lon + cellSize),
-                    CLLocationCoordinate2D(latitude: lat + cellSize, longitude: lon + cellSize),
-                    CLLocationCoordinate2D(latitude: lat + cellSize, longitude: lon),
-                ]
-                zones.append(MapZone(coordinates: coords, value: crimeLevel))
-                lon += cellSize
-            }
-            lat += cellSize
-        }
-        return zones
-    }
 
     /// Rough land mask — exclude open water cells
     func isLandCell(lat: Double, lon: Double) -> Bool {

@@ -27,7 +27,6 @@ struct ContentView: View {
     @State private var zipRegions: [ZIPCodeRegion] = ZIPCodeData.allZIPs()
     @State private var selectedZIP: ZIPCodeRegion?
     @State private var highlightedZIPId: String? = nil
-    @State private var showZIPSheet = false
     @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
     @State private var currentCenter = CLLocationCoordinate2D(latitude: 37.450, longitude: -122.050)
     @State private var pinnedLocation: CLLocationCoordinate2D?
@@ -129,6 +128,22 @@ struct ContentView: View {
                     .padding(.bottom, pinnedLocation != nil ? 320 : 90)
                 }
             }
+
+            // ── ZIP Bottom Drawer ────────────────────────────────────────────
+            // Custom overlay in same ZStack → selectedZIP changes propagate
+            // instantly without any .sheet() modal sync issues.
+            if let zip = selectedZIP {
+                ZIPBottomDrawer(zip: zip) {
+                    withAnimation(.spring(response: 0.3)) {
+                        selectedZIP      = nil
+                        highlightedZIPId = nil
+                    }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.spring(response: 0.3), value: zip.id)
+                .allowsHitTesting(true)
+                .zIndex(20)
+            }
         }
         .ignoresSafeArea()
         .onAppear {
@@ -144,10 +159,9 @@ struct ContentView: View {
             mapRegion     = MKCoordinateRegion(center: coord, span: currentSpan)
         }
         .onChange(of: selectedCategory) { _, _ in
-            // Auto-dismiss ZIP sheet when leaving Population layer
-            if showZIPSheet {
-                showZIPSheet = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            // Auto-dismiss ZIP drawer when switching any layer
+            if selectedZIP != nil {
+                withAnimation(.spring(response: 0.3)) {
                     selectedZIP      = nil
                     highlightedZIPId = nil
                 }
@@ -165,14 +179,7 @@ struct ContentView: View {
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
         .sheet(item: $selectedHousing) { f in HousingDetailSheet(facility: f) }
-        .sheet(isPresented: $showZIPSheet) {
-            // ZIPSheetWrapper uses @Binding → reactive dependency on selectedZIP.
-            // When selectedZIP changes while sheet is open, @Binding notifies
-            // the wrapper to re-render with the new ZIP (no dismiss/reopen).
-            ZIPSheetWrapper(region: $selectedZIP)
-                .presentationDetents([.fraction(0.52), .large])
-                .presentationDragIndicator(.visible)
-        }
+
     }
 
     // MARK: - Map (HFMapView — UIKit MKMapView for full overlay control)
@@ -209,8 +216,7 @@ struct ContentView: View {
             onHousingTap:  { selectedHousing   = $0 },
             onZIPTap: { region in
                 highlightedZIPId = region.id
-                selectedZIP      = region  // set content BEFORE showing sheet
-                showZIPSheet     = true    // @Binding in ZIPSheetWrapper → live update, no dismiss
+                selectedZIP      = region  // drawer re-renders instantly (same ZStack)
 
                 // ── Zoom to fit full ZIP polygon ──────────────────────────
                 // Calculate bounding box of polygon coordinates

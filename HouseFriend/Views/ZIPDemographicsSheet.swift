@@ -1,13 +1,15 @@
 import SwiftUI
 
-struct ZIPDemographicsSheet: View {
+// ── ZIPDemographicsContent ───────────────────────────────────────────────────
+// Pure content view — no NavigationStack, no dismiss button.
+// Used directly in ZIPBottomDrawer overlay so it updates instantly when
+// the selected ZIP changes (same view hierarchy as ContentView).
+struct ZIPDemographicsContent: View {
     let region: ZIPCodeRegion
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
 
                     // ── Header ──────────────────────────────────────────────
                     VStack(alignment: .leading, spacing: 8) {
@@ -49,14 +51,7 @@ struct ZIPDemographicsSheet: View {
 
                     Spacer(minLength: 32)
                 }
-                .padding(.top, 16)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
+            .padding(.top, 4)
         }
     }
 
@@ -221,20 +216,68 @@ struct ZIPDemographicsSheet: View {
     }
 }
 
-
-// ──────────────────────────────────────────────────────────────────────────────
-// ZIPSheetWrapper: bridges ContentView's @State selectedZIP into the sheet
-// using @Binding so updates propagate reactively without sheet dismissal.
-// ──────────────────────────────────────────────────────────────────────────────
-struct ZIPSheetWrapper: View {
-    @Binding var region: ZIPCodeRegion?
+// ── ZIPDemographicsSheet (kept for compatibility) ────────────────────────────
+struct ZIPDemographicsSheet: View {
+    let region: ZIPCodeRegion
+    @Environment(\.dismiss) private var dismiss
     var body: some View {
-        if let zip = region {
-            ZIPDemographicsSheet(region: zip)
-        } else {
-            // Fallback (should never render — sheet hides when region is nil)
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        NavigationStack {
+            ZIPDemographicsContent(region: region)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                    }
+                }
         }
+    }
+}
+
+// ── ZIPBottomDrawer ──────────────────────────────────────────────────────────
+// Custom bottom overlay — lives in ContentView's ZStack (same view hierarchy).
+// When selectedZIP changes, SwiftUI re-renders this view instantly with the
+// new ZIP. No .sheet() modal = no sync issues between presentation contexts.
+struct ZIPBottomDrawer: View {
+    let zip: ZIPCodeRegion
+    var onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            VStack(spacing: 0) {
+                // ── Drag indicator ──────────────────────────────────────────
+                Capsule()
+                    .fill(Color.secondary.opacity(0.35))
+                    .frame(width: 36, height: 4)
+                    .padding(.top, 10)
+                    .padding(.bottom, 2)
+
+                // ── Header row ──────────────────────────────────────────────
+                HStack {
+                    Text("ZIP \(zip.id)")
+                        .font(.headline)
+                    Spacer()
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+
+                Divider()
+
+                // ── Demographics content ─────────────────────────────────────
+                ZIPDemographicsContent(region: zip)
+            }
+            .frame(height: UIScreen.main.bounds.height * 0.52)
+            .frame(maxWidth: .infinity)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: .black.opacity(0.12), radius: 12, y: -4)
+        }
+        .ignoresSafeArea(.all, edges: .bottom)
     }
 }

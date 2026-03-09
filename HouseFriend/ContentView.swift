@@ -187,11 +187,19 @@ struct ContentView: View {
             onZIPTap: { region in
                 highlightedZIPId = region.id
                 selectedZIP      = region
-                // Fly to ZIP center
-                let span = MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-                currentCenter = region.center
-                currentSpan   = span
-                mapRegion     = MKCoordinateRegion(center: region.center, span: span)
+                // Center ZIP in the VISIBLE map area above the sheet.
+                // Sheet fraction = 0.52 → visible height = 0.48 of screen.
+                // Visible center = 24% from top; map center = 50% from top.
+                // Offset map center SOUTH by 26% of latSpan so ZIP sits at visible center.
+                let latSpan = 0.05
+                let southOffset = latSpan * 0.26
+                let adjustedCenter = CLLocationCoordinate2D(
+                    latitude:  region.center.latitude - southOffset,
+                    longitude: region.center.longitude
+                )
+                currentCenter = adjustedCenter
+                currentSpan   = MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: latSpan)
+                mapRegion     = MKCoordinateRegion(center: adjustedCenter, span: currentSpan)
             },
             onMapTap: { coord in
                 pinnedLocation = coord

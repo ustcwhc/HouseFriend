@@ -453,17 +453,46 @@ struct HFMapView: UIViewRepresentable {
             guard let map = gesture.view as? MKMapView,
                   gesture.state == .ended else { return }
             let pt = gesture.location(in: map)
-            // Do NOT fire onMapTap when the user tapped an annotation view —
-            // that is handled by mapView(_:didSelect:). Firing both causes
-            // rapid double state-mutation that dismisses the sheet immediately.
+            // Skip if annotation view was hit — handled by mapView(_:didSelect:)
             let hitAnnotation = map.annotations.contains { ann in
                 guard let view = map.view(for: ann) else { return false }
-                // Expand hit area slightly for small labels
                 return view.frame.insetBy(dx: -8, dy: -8).contains(pt)
             }
             guard !hitAnnotation else { return }
             let coord = map.convert(pt, toCoordinateFrom: map)
+
+            // Population layer: tap anywhere in a ZIP polygon → show ZIP info
+            // (not the generic neighborhood report)
+            if parent.selectedCategory == .population {
+                if let zip = parent.zipRegions.first(where: {
+                    coordinateInsidePolygon(coord, polygon: $0.polygon)
+                }) {
+                    parent.onZIPTap(zip)
+                }
+                // Tapped outside every ZIP → do nothing (no pin/score)
+                return
+            }
+
             parent.onMapTap(coord)
+        }
+
+        // Ray-casting point-in-polygon (works in lon/lat space — fine for small areas)
+        private func coordinateInsidePolygon(_ pt: CLLocationCoordinate2D,
+                                             polygon: [CLLocationCoordinate2D]) -> Bool {
+            var inside = false
+            let n = polygon.count
+            guard n >= 3 else { return false }
+            var j = n - 1
+            for i in 0..<n {
+                let xi = polygon[i].longitude, yi = polygon[i].latitude
+                let xj = polygon[j].longitude, yj = polygon[j].latitude
+                if ((yi > pt.latitude) != (yj > pt.latitude)) &&
+                   (pt.longitude < (xj - xi) * (pt.latitude - yi) / (yj - yi) + xi) {
+                    inside = !inside
+                }
+                j = i
+            }
+            return inside
         }
 
         // UIGestureRecognizerDelegate — let map's built-in gestures coexist

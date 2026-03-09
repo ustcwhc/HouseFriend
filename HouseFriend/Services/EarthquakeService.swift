@@ -30,6 +30,7 @@ class EarthquakeService: ObservableObject {
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
             defer { DispatchQueue.main.async { self?.isLoading = false } }
             guard let data = data, error == nil else {
+                AppLogger.network.error("Earthquake fetch failed: \(error?.localizedDescription ?? "no data")")
                 DispatchQueue.main.async { self?.errorMessage = "Earthquake data unavailable" }
                 return
             }
@@ -44,8 +45,10 @@ class EarthquakeService: ObservableObject {
                         date: Date(timeIntervalSince1970: Double(feature.properties.time) / 1000.0)
                     )
                 }
+                AppLogger.network.info("Earthquake: fetched \(events.count) events")
                 DispatchQueue.main.async { self?.events = events }
             } catch {
+                AppLogger.network.error("Earthquake parse error: \(error.localizedDescription)")
                 DispatchQueue.main.async { self?.errorMessage = "Failed to parse earthquake data" }
             }
         }.resume()

@@ -36,6 +36,7 @@ class CrimeService: ObservableObject {
             guard let data = data, error == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                   !json.isEmpty else {
+                AppLogger.network.warning("Crime fetch failed or empty, falling back to mock data")
                 DispatchQueue.main.async {
                     self?.errorMessage = "Crime data unavailable, using estimates"
                     self?.loadMockData(lat: lat, lon: lon)

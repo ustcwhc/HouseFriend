@@ -166,14 +166,12 @@ struct ContentView: View {
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
         .sheet(item: $selectedHousing) { f in HousingDetailSheet(facility: f) }
         .sheet(isPresented: $showZIPSheet) {
-            // selectedZIP is set before showZIPSheet=true, so always non-nil here.
-            // When user taps a different ZIP, selectedZIP updates in place →
-            // sheet content refreshes WITHOUT dismissal.
-            if let zip = selectedZIP {
-                ZIPDemographicsSheet(region: zip)
-                    .presentationDetents([.fraction(0.52), .large])
-                    .presentationDragIndicator(.visible)
-            }
+            // ZIPSheetWrapper uses @Binding → reactive dependency on selectedZIP.
+            // When selectedZIP changes while sheet is open, @Binding notifies
+            // the wrapper to re-render with the new ZIP (no dismiss/reopen).
+            ZIPSheetWrapper(region: $selectedZIP)
+                .presentationDetents([.fraction(0.52), .large])
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -212,16 +210,30 @@ struct ContentView: View {
             onZIPTap: { region in
                 highlightedZIPId = region.id
                 selectedZIP      = region  // set content BEFORE showing sheet
-                showZIPSheet     = true    // sheet re-uses existing if already open → no dismiss
-                let latSpan      = 0.05
-                let southOffset  = latSpan * 0.26   // center in visible area above sheet
+                showZIPSheet     = true    // @Binding in ZIPSheetWrapper → live update, no dismiss
+
+                // ── Zoom to fit full ZIP polygon ──────────────────────────
+                // Calculate bounding box of polygon coordinates
+                let lats = region.polygon.map { $0.latitude }
+                let lons = region.polygon.map { $0.longitude }
+                let rawLatSpan = max(0.012, (lats.max() ?? 0) - (lats.min() ?? 0))
+                let rawLonSpan = max(0.012, (lons.max() ?? 0) - (lons.min() ?? 0))
+                // Sheet covers 52% → visible map = 48%.
+                // ZIP fills ~80% of visible area → latSpan = rawLatSpan / (0.48 * 0.80)
+                let latSpan = max(0.04, rawLatSpan / 0.38)
+                // Longitude: full width visible, 30% margin each side
+                let lonSpan = max(0.04, rawLonSpan / 0.70)
+                // Offset center south so ZIP appears in visible-area center
+                // (visible center = 24% from top; map center = 50% → offset 26%)
+                let southOffset = latSpan * 0.26
                 let adjustedCenter = CLLocationCoordinate2D(
                     latitude:  region.center.latitude - southOffset,
                     longitude: region.center.longitude
                 )
                 currentCenter = adjustedCenter
-                currentSpan   = MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: latSpan)
-                mapRegion     = MKCoordinateRegion(center: adjustedCenter, span: currentSpan)
+                currentSpan   = MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: lonSpan)
+                mapRegion     = MKCoordinateRegion(center: adjustedCenter,
+                                                   span: currentSpan)
             },
             onMapTap: { coord in
                 // tap in non-population layers: no-op (handled by long press now)

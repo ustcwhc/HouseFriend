@@ -220,3 +220,21 @@ struct ZIPDemographicsSheet: View {
         return "\(n)"
     }
 }
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ZIPSheetWrapper: bridges ContentView's @State selectedZIP into the sheet
+// using @Binding so updates propagate reactively without sheet dismissal.
+// ──────────────────────────────────────────────────────────────────────────────
+struct ZIPSheetWrapper: View {
+    @Binding var region: ZIPCodeRegion?
+    var body: some View {
+        if let zip = region {
+            ZIPDemographicsSheet(region: zip)
+        } else {
+            // Fallback (should never render — sheet hides when region is nil)
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}

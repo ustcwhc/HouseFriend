@@ -15,10 +15,11 @@
 4. [Completed Features](#4-completed-features)
 5. [Pending Features](#5-pending-features)
 6. [Technical Architecture](#6-technical-architecture)
-7. [Performance Requirements](#7-performance-requirements)
-8. [File Structure](#8-file-structure)
-9. [Data Coverage](#9-data-coverage)
-10. [Known Issues & Rules](#10-known-issues--rules)
+7. [Zoom-Level Visibility Rules](#7-zoom-level-visibility-rules)
+8. [Performance Requirements](#8-performance-requirements)
+9. [File Structure](#9-file-structure)
+10. [Data Coverage](#10-data-coverage)
+11. [Known Issues & Rules](#11-known-issues--rules)
 
 ---
 
@@ -294,7 +295,50 @@ Data source: 2020 Census, `ZIPDemographics` struct fields (all Int):
 
 ---
 
-## 7. Performance Requirements
+## 7. Zoom-Level Visibility Rules
+
+All rendered objects have a visibility threshold tied to the map's zoom level (span in degrees). When zoomed out beyond an object's threshold, it is not rendered — saving computation and reducing visual clutter.
+
+### Zoom Tiers
+
+| Tier | Approx. Span | What's Visible on Map | Rendered Objects |
+|------|-------------|----------------------|-----------------|
+| **T0 — Country** | > 5° | State outlines | Nothing — all layers disabled |
+| **T1 — Region** | 1.2° – 5° | Counties, major cities | Nothing — too zoomed out for any meaningful data |
+| **T2 — Metro** | 0.3° – 1.2° | Freeways visible | ZIP-level overlays (Population polygons), high schools, fire hazard zones, electric transmission lines |
+| **T3 — City** | 0.08° – 0.3° | Boulevards / arterials visible | Middle schools, Superfund sites, earthquake markers, crime heatmap tiles, noise (major roads + railways only, static bundled data) |
+| **T4 — Neighborhood** | < 0.08° | Residential streets visible | Elementary schools, individual crime markers (clickable), supportive housing pins, noise (all streets via Overpass detail fetch), air quality zones |
+
+### Per-Layer Visibility Mapping
+
+| Layer | T0–T1 | T2 (Freeway) | T3 (Boulevard) | T4 (Street) |
+|-------|-------|-------------|----------------|-------------|
+| Population (ZIP polygons) | Hidden | **Visible** | Visible | Visible |
+| Crime (heatmap tiles) | Hidden | Hidden | **Visible** | Visible |
+| Crime (individual markers) | Hidden | Hidden | Hidden | **Visible + clickable** |
+| Noise (major roads/railways) | Hidden | Hidden | **Visible** (static bundle) | Visible |
+| Noise (secondary/residential) | Hidden | Hidden | Hidden | **Visible** (Overpass fetch) |
+| Schools (high school) | Hidden | **Visible** | Visible | Visible |
+| Schools (middle school) | Hidden | Hidden | **Visible** | Visible |
+| Schools (elementary) | Hidden | Hidden | Hidden | **Visible** |
+| Earthquake | Hidden | Hidden | **Visible** | Visible |
+| Fire Hazard | Hidden | **Visible** | Visible | Visible |
+| Electric Lines | Hidden | **Visible** | Visible | Visible |
+| Superfund | Hidden | Hidden | **Visible** | Visible |
+| Supportive Housing | Hidden | Hidden | Hidden | **Visible** |
+| Air Quality / Odor | Hidden | Hidden | Hidden | **Visible** |
+
+### Implementation Notes
+
+- **Span thresholds**: Use `region.span.latitudeDelta` to determine current tier. Thresholds: T1→T2 at 1.2°, T2→T3 at 0.3°, T3→T4 at 0.08°.
+- **Noise layer already implements this**: `maxSpanForMajor = 1.2` (nothing rendered above), `maxSpanForDetail = 0.08` (Overpass detail below).
+- **Annotation layers**: Filter annotations in `updateAnnotations()` based on zoom tier — e.g., only show `school.level == .high` when span > 0.08°.
+- **Crime markers**: Only show individual `CrimeMarker` annotations when span < 0.08° (T4). Heatmap tiles render at T3+.
+- **Performance benefit**: At T2 with 445 ZIP polygons already on screen, hiding school/superfund/housing pins avoids hundreds of unnecessary annotation views.
+
+---
+
+## 8. Performance Requirements
 
 ### Red Lines (Non-negotiable)
 
@@ -318,7 +362,7 @@ Data source: 2020 Census, `ZIPDemographics` struct fields (all Int):
 
 ---
 
-## 8. File Structure
+## 9. File Structure
 
 ```
 HouseFriend/
@@ -380,7 +424,7 @@ var onNoiseFetchCancel: () -> Void
 
 ---
 
-## 9. Data Coverage
+## 10. Data Coverage
 
 ### Bay Area 9-County Coverage Status
 
@@ -398,7 +442,7 @@ var onNoiseFetchCancel: () -> Void
 
 ---
 
-## 10. Known Issues & Rules
+## 11. Known Issues & Rules
 
 > After every bug fix, the lesson must be recorded here (to prevent repeating the same mistakes)
 

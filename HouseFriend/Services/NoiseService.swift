@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import Compression
 import MapKit
 
 // MARK: - Models
@@ -86,9 +87,17 @@ class NoiseService: ObservableObject {
         guard !staticLoaded else { return }
         staticLoaded = true
 
-        guard let url = Bundle.main.url(forResource: "bayarea_roads", withExtension: "json"),
-              let data = try? Data(contentsOf: url) else {
-            AppLogger.network.warning("Noise: bayarea_roads.json not found in bundle")
+        // Load gzip-compressed bundle (514 KB) with fallback to uncompressed
+        let data: Data
+        if let gzURL = Bundle.main.url(forResource: "bayarea_roads.json", withExtension: "gz"),
+           let compressed = try? Data(contentsOf: gzURL),
+           let decompressed = Self.gunzip(compressed) {
+            data = decompressed
+        } else if let jsonURL = Bundle.main.url(forResource: "bayarea_roads", withExtension: "json"),
+                  let raw = try? Data(contentsOf: jsonURL) {
+            data = raw
+        } else {
+            AppLogger.network.warning("Noise: bayarea_roads data not found in bundle")
             return
         }
 
@@ -342,6 +351,47 @@ class NoiseService: ObservableObject {
             ))
         }
         return roads
+    }
+
+    // MARK: - Gzip decompression
+
+    /// Decompress gzip data using the Compression framework.
+    private static func gunzip(_ data: Data) -> Data? {
+        guard data.count > 18 else { return nil }
+        // Skip gzip header to get raw deflate stream
+        var headerLen = 10
+        let flags = data[3]
+        if flags & 0x04 != 0 { // FEXTRA
+            guard data.count > headerLen + 2 else { return nil }
+            headerLen += 2 + Int(data[headerLen]) + Int(data[headerLen + 1]) << 8
+        }
+        if flags & 0x08 != 0 { // FNAME
+            while headerLen < data.count && data[headerLen] != 0 { headerLen += 1 }
+            headerLen += 1
+        }
+        if flags & 0x10 != 0 { // FCOMMENT
+            while headerLen < data.count && data[headerLen] != 0 { headerLen += 1 }
+            headerLen += 1
+        }
+        if flags & 0x02 != 0 { headerLen += 2 } // FHCRC
+
+        let deflated = data.subdata(in: headerLen..<(data.count - 8))
+        let bufferSize = 8 * 1024 * 1024 // 8 MB
+        var output = Data(count: bufferSize)
+        let decoded = output.withUnsafeMutableBytes { outPtr -> Int in
+            deflated.withUnsafeBytes { inPtr -> Int in
+                let out = outPtr.bindMemory(to: UInt8.self)
+                let inp = inPtr.bindMemory(to: UInt8.self)
+                return compression_decode_buffer(
+                    out.baseAddress!, bufferSize,
+                    inp.baseAddress!, deflated.count,
+                    nil, COMPRESSION_ZLIB
+                )
+            }
+        }
+        guard decoded > 0 else { return nil }
+        output.count = decoded
+        return output
     }
 
     // MARK: - Color helper

@@ -8,6 +8,7 @@ Output: ../HouseFriend/bayarea_roads.json
 
 import json
 import time
+import urllib.parse
 import urllib.request
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
@@ -76,8 +77,6 @@ def parse_elements(elements: list) -> list:
 
 
 def main():
-    import urllib.parse
-
     print(f"Fetching roads & railways from Overpass ({BBOX})...")
     result = fetch_overpass(QUERY)
     elements = result.get("elements", [])

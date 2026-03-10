@@ -298,15 +298,15 @@ struct HFMapView: UIViewRepresentable {
                let title = polyline.title {
                 let r = MKPolylineRenderer(polyline: polyline)
                 if title.hasPrefix("noise:") {
+                    // Smoke renderer handles noise polylines
                     let parts = title.split(separator: ":")
                     let db = Int(Double(parts[safe: 1] ?? "") ?? 55)
                     let lw  = CGFloat(Double(parts[safe: 2] ?? "") ?? 2)
-                    r.strokeColor = UIColor(NoiseService.color(for: db))
-                    r.lineWidth   = lw
-                    // Railway: dashed pattern
-                    if parts.count >= 4 && parts[3] == "r" {
-                        r.lineDashPattern = [8, 6]
-                    }
+                    let rail = parts.count >= 4 && parts[3] == "r"
+                    return NoiseSmokeRenderer(polyline: polyline,
+                                              dbLevel: db,
+                                              lineWidth: lw,
+                                              isRailway: rail)
                 } else if title.hasPrefix("electric:") {
                     r.strokeColor = UIColor.systemYellow.withAlphaComponent(0.75)
                     r.lineWidth   = 2.5

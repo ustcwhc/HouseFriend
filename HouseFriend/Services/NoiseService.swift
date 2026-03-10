@@ -119,9 +119,18 @@ class NoiseService: ObservableObject {
     /// Called when noise layer is activated or map camera changes
     func fetchForRegion(_ region: MKCoordinateRegion) {
         let span = region.span.latitudeDelta
+
+        // Very zoomed out: freeways aren't even visible, skip rendering entirely
+        if span > maxSpanForMajor {
+            needsZoomIn = true
+            roads = []
+            isLoading = false
+            return
+        }
+
         needsZoomIn = false
 
-        // At any zoom level, show static roads filtered to visible region
+        // Filter static roads to visible region
         let visibleStatic = filterRoadsToRegion(staticRoads, region: region)
 
         if span > maxSpanForDetail {

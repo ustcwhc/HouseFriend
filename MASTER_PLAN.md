@@ -301,18 +301,22 @@ All rendered objects have a visibility threshold tied to the map's zoom level (s
 
 ### Zoom Tiers
 
-| Tier | Approx. Span | What's Visible on Map | Rendered Objects |
-|------|-------------|----------------------|-----------------|
-| **T0 — Country** | > 5° | State outlines | Nothing — all layers disabled |
-| **T1 — Region** | 1.2° – 5° | Counties, major cities | Nothing — too zoomed out for any meaningful data |
-| **T2 — Metro** | 0.3° – 1.2° | Freeways visible | ZIP-level overlays (Population polygons), high schools, fire hazard zones, electric transmission lines |
-| **T3 — City** | 0.08° – 0.3° | Boulevards / arterials visible | Middle schools, Superfund sites, earthquake markers, crime heatmap tiles, noise (major roads + railways only, static bundled data) |
-| **T4 — Neighborhood** | < 0.08° | Residential streets visible | Elementary schools, individual crime markers (clickable), supportive housing pins, noise (all streets via Overpass detail fetch), air quality zones |
+Each tier has a canonical name for use in code constants, comments, and future references.
 
-### Per-Layer Visibility Mapping
+| Tier | Name | Code Constant | Span | What's Visible on Map |
+|------|------|---------------|------|----------------------|
+| **Z0** | **Satellite** | `ZoomTier.satellite` | > 5° | State outlines only |
+| **Z1** | **Region** | `ZoomTier.region` | 1.2° – 5° | Counties, major city labels |
+| **Z2** | **Freeway** | `ZoomTier.freeway` | 0.3° – 1.2° | Freeways, interchanges, city boundaries |
+| **Z3** | **Boulevard** | `ZoomTier.boulevard` | 0.08° – 0.3° | Arterials, boulevards, named roads |
+| **Z4** | **Street** | `ZoomTier.street` | < 0.08° | Residential streets, individual buildings |
 
-| Layer | T0–T1 | T2 (Freeway) | T3 (Boulevard) | T4 (Street) |
-|-------|-------|-------------|----------------|-------------|
+**Usage:** Reference by name — e.g. "this annotation appears at **Freeway** zoom and below" or "only render at **Street** zoom."
+
+### Rendered Objects by Zoom Tier
+
+| Layer | Satellite / Region | Freeway (Z2) | Boulevard (Z3) | Street (Z4) |
+|-------|-------------------|-------------|----------------|-------------|
 | Population (ZIP polygons) | Hidden | **Visible** | Visible | Visible |
 | Crime (heatmap tiles) | Hidden | Hidden | **Visible** | Visible |
 | Crime (individual markers) | Hidden | Hidden | Hidden | **Visible + clickable** |
@@ -328,13 +332,24 @@ All rendered objects have a visibility threshold tied to the map's zoom level (s
 | Supportive Housing | Hidden | Hidden | Hidden | **Visible** |
 | Air Quality / Odor | Hidden | Hidden | Hidden | **Visible** |
 
+### Span Thresholds (Quick Reference)
+
+```
+Z0 Satellite ──── 5.0° ──── Z1 Region ──── 1.2° ──── Z2 Freeway ──── 0.3° ──── Z3 Boulevard ──── 0.08° ──── Z4 Street
+     nothing                    nothing                  ZIP, high schools         mid schools, crime       everything
+                                                         fire, power lines         superfund, quakes        elem schools
+                                                                                   noise (majors)           crime markers
+                                                                                                            noise (detail)
+                                                                                                            housing, AQ
+```
+
 ### Implementation Notes
 
-- **Span thresholds**: Use `region.span.latitudeDelta` to determine current tier. Thresholds: T1→T2 at 1.2°, T2→T3 at 0.3°, T3→T4 at 0.08°.
-- **Noise layer already implements this**: `maxSpanForMajor = 1.2` (nothing rendered above), `maxSpanForDetail = 0.08` (Overpass detail below).
-- **Annotation layers**: Filter annotations in `updateAnnotations()` based on zoom tier — e.g., only show `school.level == .high` when span > 0.08°.
-- **Crime markers**: Only show individual `CrimeMarker` annotations when span < 0.08° (T4). Heatmap tiles render at T3+.
-- **Performance benefit**: At T2 with 445 ZIP polygons already on screen, hiding school/superfund/housing pins avoids hundreds of unnecessary annotation views.
+- **Determine tier**: `let tier = ZoomTier(span: region.span.latitudeDelta)` — switch on span thresholds 5.0, 1.2, 0.3, 0.08.
+- **Noise layer already implements this**: `maxSpanForMajor = 1.2` (nothing above **Freeway**), `maxSpanForDetail = 0.08` (Overpass detail at **Street**).
+- **Annotation layers**: Filter annotations in `updateAnnotations()` based on zoom tier — e.g., only show `school.level == .high` at **Freeway** zoom, `.middle` at **Boulevard**, `.elementary` at **Street**.
+- **Crime markers**: Individual `CrimeMarker` annotations only at **Street** zoom. Heatmap tiles render at **Boulevard** and below.
+- **Performance benefit**: At **Freeway** zoom with 445 ZIP polygons on screen, hiding school/superfund/housing pins avoids hundreds of unnecessary annotation views.
 
 ---
 

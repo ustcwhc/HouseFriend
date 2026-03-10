@@ -18,73 +18,95 @@ Z0 Satellite ─── 5.0° ─── Z1 State ─── 1.2° ─── Z2 Cou
 
 ---
 
-## Complete Object Map
+## Visibility by Layer
 
-### Satellite / State: Nothing rendered
+### Population
 
-### County (Z2)
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| ZIP polygon (unselected) | MKPolygon | **County** | Yellow border, 445 ZIPs |
+| ZIP polygon (highlighted) | MKPolygon | **County** | Pink fill + pink border |
+| ZIP code label | MKAnnotationView | **County** | White background, shows ZIP ID |
 
-| Object | Layer | Rendering | Notes |
-|--------|-------|-----------|-------|
-| ZIP polygon | Population | MKPolygon | Yellow border, 445 ZIPs |
-| ZIP label | Population | MKAnnotationView | White label with ZIP ID |
-| High school | Schools | MKMarkerAnnotationView | Purple, graduationcap.fill |
-| Fire zone (Extreme) | Fire Hazard | MKPolygon | Dark red, 50% opacity |
-| Fire zone (Very High) | Fire Hazard | MKPolygon | Orange-red, 42% opacity |
-| Fire zone (High) | Fire Hazard | MKPolygon | Golden, 35% opacity |
-| Fire zone (Moderate) | Fire Hazard | MKPolygon | Yellow, 28% opacity |
-| 115 kV power line | Electric | MKPolyline | Yellow, 2.5pt |
-| 60 kV power line | Electric | MKPolyline | Yellow, 2.5pt |
+### Crime
 
-### City (Z3) — adds these
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| Heatmap tile | MKTileOverlay | **City** | Gaussian model, auto-cached |
+| Violent crime marker | MKMarkerAnnotationView | **Neighborhood** | Purple, clickable |
+| Property crime marker | MKMarkerAnnotationView | **Neighborhood** | Cyan, clickable |
+| Vehicle crime marker | MKMarkerAnnotationView | **Neighborhood** | Orange, clickable |
+| Vandalism marker | MKMarkerAnnotationView | **Neighborhood** | Brown, clickable |
+| Other crime marker | MKMarkerAnnotationView | **Neighborhood** | Gray, clickable |
 
-| Object | Layer | Rendering | Notes |
-|--------|-------|-----------|-------|
-| Crime heatmap | Crime | MKTileOverlay | Gaussian model tiles |
-| Motorway | Noise | NoiseSmokeRenderer | 78 dB, 5pt, dark smoke |
-| Trunk road | Noise | NoiseSmokeRenderer | 74 dB, 5pt |
-| Primary road | Noise | NoiseSmokeRenderer | 68 dB, 4pt |
-| Heavy rail | Noise | NoiseSmokeRenderer | 75 dB, 4pt, dashed |
-| Light rail / subway | Noise | NoiseSmokeRenderer | 70 dB, 3.5pt, dashed |
-| Middle school | Schools | MKMarkerAnnotationView | Blue, graduationcap.fill |
-| Earthquake (M >= 5) | Earthquake | MKMarkerAnnotationView | Red, magnitude text |
-| Earthquake (M >= 4) | Earthquake | MKMarkerAnnotationView | Orange |
-| Earthquake (M < 4) | Earthquake | MKMarkerAnnotationView | Yellow |
-| Superfund site | Superfund | MKMarkerAnnotationView | Orange, triangle icon |
+### Noise
 
-### Neighborhood (Z4) — adds these
+| Object | Rendering | Visible At | Data Source | Notes |
+|--------|-----------|------------|-------------|-------|
+| Motorway | NoiseSmokeRenderer | **City** | Static bundle | 78 dB, 5pt, dark smoke |
+| Trunk road | NoiseSmokeRenderer | **City** | Static bundle | 74 dB, 5pt |
+| Primary road | NoiseSmokeRenderer | **City** | Static bundle | 68 dB, 4pt |
+| Heavy rail (Caltrain, freight) | NoiseSmokeRenderer | **City** | Static bundle | 75 dB, 4pt, dashed |
+| Light rail / subway (BART, VTA) | NoiseSmokeRenderer | **City** | Static bundle | 70 dB, 3.5pt, dashed |
+| Secondary road | NoiseSmokeRenderer | **Neighborhood** | Overpass API | 63 dB, 3pt |
+| Tertiary road | NoiseSmokeRenderer | **Neighborhood** | Overpass API | 58 dB, 2.5pt |
+| Residential street | NoiseSmokeRenderer | **Neighborhood** | Overpass API | 52 dB, 2pt |
+| Service road | NoiseSmokeRenderer | **Neighborhood** | Overpass API | 47 dB, 1.5pt |
 
-| Object | Layer | Rendering | Notes |
-|--------|-------|-----------|-------|
-| Violent crime marker | Crime | MKMarkerAnnotationView | Purple, clickable |
-| Property crime marker | Crime | MKMarkerAnnotationView | Cyan, clickable |
-| Vehicle crime marker | Crime | MKMarkerAnnotationView | Orange, clickable |
-| Vandalism marker | Crime | MKMarkerAnnotationView | Brown, clickable |
-| Other crime marker | Crime | MKMarkerAnnotationView | Gray, clickable |
-| Secondary road | Noise | NoiseSmokeRenderer | 63 dB, 3pt |
-| Tertiary road | Noise | NoiseSmokeRenderer | 58 dB, 2.5pt |
-| Residential street | Noise | NoiseSmokeRenderer | 52 dB, 2pt |
-| Service road | Noise | NoiseSmokeRenderer | 47 dB, 1.5pt |
-| Elementary school | Schools | MKMarkerAnnotationView | Green, graduationcap.fill |
-| Emergency shelter | Housing | MKMarkerAnnotationView | Teal, house.fill |
-| Transitional housing | Housing | MKMarkerAnnotationView | Teal, house.fill |
-| Permanent supportive | Housing | MKMarkerAnnotationView | Teal, house.fill |
-| Odor zone | Air Quality | MKPolygon | Brown, 30% opacity |
+### Schools
 
-### Always Visible
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| High school | MKMarkerAnnotationView | **County** | Purple, graduationcap.fill |
+| Middle school | MKMarkerAnnotationView | **City** | Blue, graduationcap.fill |
+| Elementary school | MKMarkerAnnotationView | **Neighborhood** | Green, graduationcap.fill |
 
-| Object | Layer | Rendering | Notes |
-|--------|-------|-----------|-------|
-| User pin | All | MKMarkerAnnotationView | Red, mappin icon |
+### Earthquake
 
----
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| Major quake (M >= 5.0) | MKMarkerAnnotationView | **City** | Red, magnitude text |
+| Moderate quake (M >= 4.0) | MKMarkerAnnotationView | **City** | Orange |
+| Minor quake (M < 4.0) | MKMarkerAnnotationView | **City** | Yellow |
 
-## Counts by Tier
+### Fire Hazard
 
-| Tier | New Objects | Cumulative |
-|------|-------------|------------|
-| Satellite / State | 0 | 0 |
-| County | 9 | 9 |
-| City | 11 | 20 |
-| Neighborhood | 14 | 34 |
-| Always | 1 | 35 |
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| Extreme zone | MKPolygon | **County** | Dark red, 50% opacity |
+| Very High zone | MKPolygon | **County** | Orange-red, 42% opacity |
+| High zone | MKPolygon | **County** | Golden, 35% opacity |
+| Moderate zone | MKPolygon | **County** | Yellow, 28% opacity |
+
+### Electric Lines
+
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| 115 kV transmission line | MKPolyline | **County** | Yellow, 2.5pt |
+| 60 kV transmission line | MKPolyline | **County** | Yellow, 2.5pt |
+
+### Superfund
+
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| NPL / Active / Proposed site | MKMarkerAnnotationView | **City** | Orange, triangle icon |
+
+### Supportive Housing
+
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| Emergency shelter | MKMarkerAnnotationView | **Neighborhood** | Teal, house.fill |
+| Transitional housing | MKMarkerAnnotationView | **Neighborhood** | Teal, house.fill |
+| Permanent supportive | MKMarkerAnnotationView | **Neighborhood** | Teal, house.fill |
+
+### Air Quality / Odor
+
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| Odor zone | MKPolygon | **Neighborhood** | Brown, 30% opacity |
+
+### Global
+
+| Object | Rendering | Visible At | Notes |
+|--------|-----------|------------|-------|
+| User pin | MKMarkerAnnotationView | **All levels** | Red, mappin icon |

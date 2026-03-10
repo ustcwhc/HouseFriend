@@ -15,10 +15,11 @@
 4. [Completed Features](#4-completed-features)
 5. [Pending Features](#5-pending-features)
 6. [Technical Architecture](#6-technical-architecture)
-7. [Performance Requirements](#7-performance-requirements)
-8. [File Structure](#8-file-structure)
-9. [Data Coverage](#9-data-coverage)
-10. [Known Issues & Rules](#10-known-issues--rules)
+7. [Zoom-Level Visibility Rules](#7-zoom-level-visibility-rules)
+8. [Performance Requirements](#8-performance-requirements)
+9. [File Structure](#9-file-structure)
+10. [Data Coverage](#10-data-coverage)
+11. [Known Issues & Rules](#11-known-issues--rules)
 
 ---
 
@@ -294,7 +295,65 @@ Data source: 2020 Census, `ZIPDemographics` struct fields (all Int):
 
 ---
 
-## 7. Performance Requirements
+## 7. Zoom-Level Visibility Rules
+
+All rendered objects have a visibility threshold tied to the map's zoom level (span in degrees). When zoomed out beyond an object's threshold, it is not rendered — saving computation and reducing visual clutter.
+
+### Zoom Tiers
+
+Each tier has a canonical name for use in code constants, comments, and future references.
+
+| Tier | Name | Code Constant | Span | What's Visible on Map |
+|------|------|---------------|------|----------------------|
+| **Z0** | **Satellite** | `ZoomTier.satellite` | > 5° | Continents, countries |
+| **Z1** | **State** | `ZoomTier.state` | 1.2° – 5° | State outlines, major cities |
+| **Z2** | **County** | `ZoomTier.county` | 0.3° – 1.2° | Counties, freeways, city boundaries |
+| **Z3** | **City** | `ZoomTier.city` | 0.08° – 0.3° | Boulevards, arterials, named roads |
+| **Z4** | **Neighborhood** | `ZoomTier.neighborhood` | < 0.08° | Residential streets, individual buildings |
+
+**Usage:** Reference by name — e.g. "this annotation appears at **County** level and below" or "only render at **Neighborhood** level."
+
+### Rendered Objects by Zoom Tier
+
+| Layer | Satellite / State | County (Z2) | City (Z3) | Neighborhood (Z4) |
+|-------|-------------------|-------------|-----------|-------------|
+| Population (ZIP polygons) | Hidden | **Visible** | Visible | Visible |
+| Crime (heatmap tiles) | Hidden | Hidden | **Visible** | Visible |
+| Crime (individual markers) | Hidden | Hidden | Hidden | **Visible + clickable** |
+| Noise (major roads/railways) | Hidden | Hidden | **Visible** (static bundle) | Visible |
+| Noise (secondary/residential) | Hidden | Hidden | Hidden | **Visible** (Overpass fetch) |
+| Schools (high school) | Hidden | **Visible** | Visible | Visible |
+| Schools (middle school) | Hidden | Hidden | **Visible** | Visible |
+| Schools (elementary) | Hidden | Hidden | Hidden | **Visible** |
+| Earthquake | Hidden | Hidden | **Visible** | Visible |
+| Fire Hazard | Hidden | **Visible** | Visible | Visible |
+| Electric Lines | Hidden | **Visible** | Visible | Visible |
+| Superfund | Hidden | Hidden | **Visible** | Visible |
+| Supportive Housing | Hidden | Hidden | Hidden | **Visible** |
+| Air Quality / Odor | Hidden | Hidden | Hidden | **Visible** |
+
+### Span Thresholds (Quick Reference)
+
+```
+Z0 Satellite ──── 5.0° ──── Z1 State ──── 1.2° ──── Z2 County ──── 0.3° ──── Z3 City ──── 0.08° ──── Z4 Neighborhood
+     nothing                   nothing                ZIP, high schools       mid schools, crime          everything
+                                                      fire, power lines       superfund, quakes           elem schools
+                                                                              noise (majors)              crime markers
+                                                                                                          noise (detail)
+                                                                                                          housing, AQ
+```
+
+### Implementation Notes
+
+- **Determine tier**: `let tier = ZoomTier(span: region.span.latitudeDelta)` — switch on span thresholds 5.0, 1.2, 0.3, 0.08.
+- **Noise layer already implements this**: `maxSpanForMajor = 1.2` (nothing above **County**), `maxSpanForDetail = 0.08` (Overpass detail at **Neighborhood**).
+- **Annotation layers**: Filter annotations in `updateAnnotations()` based on zoom tier — e.g., only show `school.level == .high` at **County** level, `.middle` at **City**, `.elementary` at **Neighborhood**.
+- **Crime markers**: Individual `CrimeMarker` annotations only at **Neighborhood** level. Heatmap tiles render at **City** and below.
+- **Performance benefit**: At **County** level with 445 ZIP polygons on screen, hiding school/superfund/housing pins avoids hundreds of unnecessary annotation views.
+
+---
+
+## 8. Performance Requirements
 
 ### Red Lines (Non-negotiable)
 
@@ -318,7 +377,7 @@ Data source: 2020 Census, `ZIPDemographics` struct fields (all Int):
 
 ---
 
-## 8. File Structure
+## 9. File Structure
 
 ```
 HouseFriend/
@@ -380,7 +439,7 @@ var onNoiseFetchCancel: () -> Void
 
 ---
 
-## 9. Data Coverage
+## 10. Data Coverage
 
 ### Bay Area 9-County Coverage Status
 
@@ -398,7 +457,7 @@ var onNoiseFetchCancel: () -> Void
 
 ---
 
-## 10. Known Issues & Rules
+## 11. Known Issues & Rules
 
 > After every bug fix, the lesson must be recorded here (to prevent repeating the same mistakes)
 

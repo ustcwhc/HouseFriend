@@ -81,7 +81,7 @@ struct HFMapView: UIViewRepresentable {
         private var activeCategory: CategoryType?
         private var crimeTileOverlay: CrimeTileOverlay?
         private var noisePolylines: [MKPolyline] = []
-        private var lastNoiseCount = 0
+        private var lastNoiseHash = 0
 
         // Annotations: stable IDs → avoid flicker on re-render
         private var annotationMap: [String: HFAnnotation] = [:]
@@ -137,7 +137,7 @@ struct HFMapView: UIViewRepresentable {
 
             map.removeOverlays(map.overlays)
             noisePolylines = []
-            lastNoiseCount = -1   // B1 fix: reset so noise rebuild works if we return
+            lastNoiseHash = 0   // B1 fix: reset so noise rebuild works if we return
             crimeTileOverlay = nil
             zipRenderers = [:]
             activeCategory = cat
@@ -186,16 +186,23 @@ struct HFMapView: UIViewRepresentable {
         }
 
         private func updateNoisePolylines(_ map: MKMapView) {
-            let roads = Array(parent.noiseRoads.prefix(200))
-            // Skip if nothing changed
-            guard roads.count != lastNoiseCount else { return }
+            let roads = parent.noiseRoads
+            // Skip if nothing changed (hash on count + first/last wayId)
+            var hasher = Hasher()
+            hasher.combine(roads.count)
+            if let first = roads.first { hasher.combine(first.wayId) }
+            if let last = roads.last { hasher.combine(last.wayId) }
+            let hash = hasher.finalize()
+            guard hash != lastNoiseHash else { return }
             map.removeOverlays(noisePolylines)
             noisePolylines = []
-            lastNoiseCount = roads.count
+            lastNoiseHash = hash
             for road in roads {
                 let poly = MKPolyline(coordinates: road.coordinates,
                                       count: road.coordinates.count)
-                poly.title = "noise:\(road.dbLevel):\(road.lineWidth)"
+                // rail flag: "r" suffix triggers dashed rendering
+                let railFlag = road.isRailway ? ":r" : ""
+                poly.title = "noise:\(road.dbLevel):\(road.lineWidth)\(railFlag)"
                 map.addOverlay(poly, level: .aboveRoads)
                 noisePolylines.append(poly)
             }
@@ -296,6 +303,10 @@ struct HFMapView: UIViewRepresentable {
                     let lw  = CGFloat(Double(parts[safe: 2] ?? "") ?? 2)
                     r.strokeColor = UIColor(NoiseService.color(for: db))
                     r.lineWidth   = lw
+                    // Railway: dashed pattern
+                    if parts.count >= 4 && parts[3] == "r" {
+                        r.lineDashPattern = [8, 6]
+                    }
                 } else if title.hasPrefix("electric:") {
                     r.strokeColor = UIColor.systemYellow.withAlphaComponent(0.75)
                     r.lineWidth   = 2.5

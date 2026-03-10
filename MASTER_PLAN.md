@@ -305,18 +305,18 @@ Each tier has a canonical name for use in code constants, comments, and future r
 
 | Tier | Name | Code Constant | Span | What's Visible on Map |
 |------|------|---------------|------|----------------------|
-| **Z0** | **Satellite** | `ZoomTier.satellite` | > 5° | State outlines only |
-| **Z1** | **Region** | `ZoomTier.region` | 1.2° – 5° | Counties, major city labels |
-| **Z2** | **Freeway** | `ZoomTier.freeway` | 0.3° – 1.2° | Freeways, interchanges, city boundaries |
-| **Z3** | **Boulevard** | `ZoomTier.boulevard` | 0.08° – 0.3° | Arterials, boulevards, named roads |
-| **Z4** | **Street** | `ZoomTier.street` | < 0.08° | Residential streets, individual buildings |
+| **Z0** | **Satellite** | `ZoomTier.satellite` | > 5° | Continents, countries |
+| **Z1** | **State** | `ZoomTier.state` | 1.2° – 5° | State outlines, major cities |
+| **Z2** | **County** | `ZoomTier.county` | 0.3° – 1.2° | Counties, freeways, city boundaries |
+| **Z3** | **City** | `ZoomTier.city` | 0.08° – 0.3° | Boulevards, arterials, named roads |
+| **Z4** | **Neighborhood** | `ZoomTier.neighborhood` | < 0.08° | Residential streets, individual buildings |
 
-**Usage:** Reference by name — e.g. "this annotation appears at **Freeway** zoom and below" or "only render at **Street** zoom."
+**Usage:** Reference by name — e.g. "this annotation appears at **County** level and below" or "only render at **Neighborhood** level."
 
 ### Rendered Objects by Zoom Tier
 
-| Layer | Satellite / Region | Freeway (Z2) | Boulevard (Z3) | Street (Z4) |
-|-------|-------------------|-------------|----------------|-------------|
+| Layer | Satellite / State | County (Z2) | City (Z3) | Neighborhood (Z4) |
+|-------|-------------------|-------------|-----------|-------------|
 | Population (ZIP polygons) | Hidden | **Visible** | Visible | Visible |
 | Crime (heatmap tiles) | Hidden | Hidden | **Visible** | Visible |
 | Crime (individual markers) | Hidden | Hidden | Hidden | **Visible + clickable** |
@@ -335,21 +335,21 @@ Each tier has a canonical name for use in code constants, comments, and future r
 ### Span Thresholds (Quick Reference)
 
 ```
-Z0 Satellite ──── 5.0° ──── Z1 Region ──── 1.2° ──── Z2 Freeway ──── 0.3° ──── Z3 Boulevard ──── 0.08° ──── Z4 Street
-     nothing                    nothing                  ZIP, high schools         mid schools, crime       everything
-                                                         fire, power lines         superfund, quakes        elem schools
-                                                                                   noise (majors)           crime markers
-                                                                                                            noise (detail)
-                                                                                                            housing, AQ
+Z0 Satellite ──── 5.0° ──── Z1 State ──── 1.2° ──── Z2 County ──── 0.3° ──── Z3 City ──── 0.08° ──── Z4 Neighborhood
+     nothing                   nothing                ZIP, high schools       mid schools, crime          everything
+                                                      fire, power lines       superfund, quakes           elem schools
+                                                                              noise (majors)              crime markers
+                                                                                                          noise (detail)
+                                                                                                          housing, AQ
 ```
 
 ### Implementation Notes
 
 - **Determine tier**: `let tier = ZoomTier(span: region.span.latitudeDelta)` — switch on span thresholds 5.0, 1.2, 0.3, 0.08.
-- **Noise layer already implements this**: `maxSpanForMajor = 1.2` (nothing above **Freeway**), `maxSpanForDetail = 0.08` (Overpass detail at **Street**).
-- **Annotation layers**: Filter annotations in `updateAnnotations()` based on zoom tier — e.g., only show `school.level == .high` at **Freeway** zoom, `.middle` at **Boulevard**, `.elementary` at **Street**.
-- **Crime markers**: Individual `CrimeMarker` annotations only at **Street** zoom. Heatmap tiles render at **Boulevard** and below.
-- **Performance benefit**: At **Freeway** zoom with 445 ZIP polygons on screen, hiding school/superfund/housing pins avoids hundreds of unnecessary annotation views.
+- **Noise layer already implements this**: `maxSpanForMajor = 1.2` (nothing above **County**), `maxSpanForDetail = 0.08` (Overpass detail at **Neighborhood**).
+- **Annotation layers**: Filter annotations in `updateAnnotations()` based on zoom tier — e.g., only show `school.level == .high` at **County** level, `.middle` at **City**, `.elementary` at **Neighborhood**.
+- **Crime markers**: Individual `CrimeMarker` annotations only at **Neighborhood** level. Heatmap tiles render at **City** and below.
+- **Performance benefit**: At **County** level with 445 ZIP polygons on screen, hiding school/superfund/housing pins avoids hundreds of unnecessary annotation views.
 
 ---
 

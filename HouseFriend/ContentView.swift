@@ -53,6 +53,18 @@ struct ContentView: View {
         ZStack {
             mapLayer
 
+            // Centered loading spinner for noise layer
+            if selectedCategory == .noise && noiseService.isLoading {
+                ProgressView()
+                    .scaleEffect(1.5)
+                    .padding(20)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(14)
+                    .shadow(color: .black.opacity(0.15), radius: 8)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: noiseService.isLoading)
+            }
+
             // Top: NavBar + Search
             VStack(spacing: 0) {
                 navBar

@@ -39,109 +39,164 @@ enum ZoomTier: Int, Comparable, CaseIterable {
     }
 }
 
-// MARK: - Object Visibility
+// MARK: - Layer Visibility
 
-/// Every rendered map object and the minimum zoom tier at which it becomes visible.
-/// Use `isVisible(at:)` to check whether an object should be rendered.
-enum MapObject {
+/// Per-layer visibility rules. Each layer defines which objects appear at each zoom tier.
+/// Usage: `LayerVisibility.population.isVisible(at: tier)`
+enum LayerVisibility {
 
-    // MARK: Population
-    case zipPolygon                 // County
-    case zipLabel                   // County
+    // MARK: - Population Layer
 
-    // MARK: Crime
-    case crimeHeatmap               // City
-    case crimeMarkerViolent         // Neighborhood
-    case crimeMarkerProperty        // Neighborhood
-    case crimeMarkerVehicle         // Neighborhood
-    case crimeMarkerVandalism       // Neighborhood
-    case crimeMarkerOther           // Neighborhood
+    enum Population {
+        case zipPolygon             // County — yellow border, 445 ZIPs
+        case zipLabel               // County — white label with ZIP ID
 
-    // MARK: Noise — Major (static bundled data)
-    case noiseMotorway              // City     — 78 dB, 5pt
-    case noiseTrunk                 // City     — 74 dB, 5pt
-    case noisePrimary               // City     — 68 dB, 4pt
-    case noiseRailway               // City     — 75 dB, 4pt, dashed
-    case noiseLightRail             // City     — 70 dB, 3.5pt, dashed
-
-    // MARK: Noise — Detail (Overpass fetch)
-    case noiseSecondary             // Neighborhood — 63 dB, 3pt
-    case noiseTertiary              // Neighborhood — 58 dB, 2.5pt
-    case noiseResidential           // Neighborhood — 52 dB, 2pt
-    case noiseService               // Neighborhood — 47 dB, 1.5pt
-
-    // MARK: Schools
-    case schoolHigh                 // County   — purple pin
-    case schoolMiddle               // City     — blue pin
-    case schoolElementary           // Neighborhood — green pin
-
-    // MARK: Earthquake
-    case earthquakeMajor            // City     — M >= 5.0, red
-    case earthquakeModerate         // City     — M >= 4.0, orange
-    case earthquakeMinor            // City     — M < 4.0, yellow
-
-    // MARK: Fire Hazard
-    case fireZoneExtreme            // County   — dark red polygon
-    case fireZoneVeryHigh           // County   — orange-red polygon
-    case fireZoneHigh               // County   — golden polygon
-    case fireZoneModerate           // County   — yellow polygon
-
-    // MARK: Electric Lines
-    case electricLine115kV          // County   — yellow polyline
-    case electricLine60kV           // County   — yellow polyline
-
-    // MARK: Superfund
-    case superfundSite              // City     — orange pin
-
-    // MARK: Supportive Housing
-    case housingShelter             // Neighborhood — teal pin
-    case housingTransitional        // Neighborhood — teal pin
-    case housingPermanent           // Neighborhood — teal pin
-
-    // MARK: Air Quality / Odor
-    case odorZone                   // Neighborhood — brown polygon
-
-    // MARK: Global
-    case userPin                    // satellite (always visible)
-
-    /// The minimum zoom tier at which this object becomes visible.
-    var minimumTier: ZoomTier {
-        switch self {
-        // Always visible
-        case .userPin:                                          return .satellite
-
-        // County level — freeways visible
-        case .zipPolygon, .zipLabel:                            return .county
-        case .schoolHigh:                                       return .county
-        case .fireZoneExtreme, .fireZoneVeryHigh,
-             .fireZoneHigh, .fireZoneModerate:                  return .county
-        case .electricLine115kV, .electricLine60kV:             return .county
-
-        // City level — boulevards visible
-        case .crimeHeatmap:                                     return .city
-        case .noiseMotorway, .noiseTrunk, .noisePrimary,
-             .noiseRailway, .noiseLightRail:                    return .city
-        case .schoolMiddle:                                     return .city
-        case .earthquakeMajor, .earthquakeModerate,
-             .earthquakeMinor:                                  return .city
-        case .superfundSite:                                    return .city
-
-        // Neighborhood level — residential streets visible
-        case .crimeMarkerViolent, .crimeMarkerProperty,
-             .crimeMarkerVehicle, .crimeMarkerVandalism,
-             .crimeMarkerOther:                                 return .neighborhood
-        case .noiseSecondary, .noiseTertiary,
-             .noiseResidential, .noiseService:                  return .neighborhood
-        case .schoolElementary:                                 return .neighborhood
-        case .housingShelter, .housingTransitional,
-             .housingPermanent:                                 return .neighborhood
-        case .odorZone:                                         return .neighborhood
+        var minimumTier: ZoomTier {
+            switch self {
+            case .zipPolygon, .zipLabel: return .county
+            }
         }
     }
 
-    /// Whether this object should be rendered at the given zoom tier.
-    func isVisible(at tier: ZoomTier) -> Bool {
-        tier >= minimumTier
+    // MARK: - Crime Layer
+
+    enum Crime {
+        case heatmap                // City — Gaussian model tiles
+        case markerViolent          // Neighborhood — purple, clickable
+        case markerProperty         // Neighborhood — cyan, clickable
+        case markerVehicle          // Neighborhood — orange, clickable
+        case markerVandalism        // Neighborhood — brown, clickable
+        case markerOther            // Neighborhood — gray, clickable
+
+        var minimumTier: ZoomTier {
+            switch self {
+            case .heatmap:
+                return .city
+            case .markerViolent, .markerProperty, .markerVehicle,
+                 .markerVandalism, .markerOther:
+                return .neighborhood
+            }
+        }
+    }
+
+    // MARK: - Noise Layer
+
+    enum Noise {
+        // Major roads — static bundled data, visible at City level
+        case motorway               // 78 dB, 5pt
+        case trunk                  // 74 dB, 5pt
+        case primary                // 68 dB, 4pt
+        case railway                // 75 dB, 4pt, dashed
+        case lightRail              // 70 dB, 3.5pt, dashed
+
+        // Detail streets — Overpass fetch, visible at Neighborhood level
+        case secondary              // 63 dB, 3pt
+        case tertiary               // 58 dB, 2.5pt
+        case residential            // 52 dB, 2pt
+        case service                // 47 dB, 1.5pt
+
+        var minimumTier: ZoomTier {
+            switch self {
+            case .motorway, .trunk, .primary, .railway, .lightRail:
+                return .city
+            case .secondary, .tertiary, .residential, .service:
+                return .neighborhood
+            }
+        }
+    }
+
+    // MARK: - Schools Layer
+
+    enum Schools {
+        case high                   // County — purple pin
+        case middle                 // City — blue pin
+        case elementary             // Neighborhood — green pin
+
+        var minimumTier: ZoomTier {
+            switch self {
+            case .high:       return .county
+            case .middle:     return .city
+            case .elementary: return .neighborhood
+            }
+        }
+    }
+
+    // MARK: - Earthquake Layer
+
+    enum Earthquake {
+        case major                  // City — M >= 5.0, red
+        case moderate               // City — M >= 4.0, orange
+        case minor                  // City — M < 4.0, yellow
+
+        var minimumTier: ZoomTier {
+            return .city
+        }
+    }
+
+    // MARK: - Fire Hazard Layer
+
+    enum FireHazard {
+        case extreme                // County — dark red polygon
+        case veryHigh               // County — orange-red polygon
+        case high                   // County — golden polygon
+        case moderate               // County — yellow polygon
+
+        var minimumTier: ZoomTier {
+            return .county
+        }
+    }
+
+    // MARK: - Electric Lines Layer
+
+    enum ElectricLines {
+        case line115kV              // County — yellow polyline
+        case line60kV               // County — yellow polyline
+
+        var minimumTier: ZoomTier {
+            return .county
+        }
+    }
+
+    // MARK: - Superfund Layer
+
+    enum Superfund {
+        case site                   // City — orange pin
+
+        var minimumTier: ZoomTier {
+            return .city
+        }
+    }
+
+    // MARK: - Supportive Housing Layer
+
+    enum SupportiveHousing {
+        case shelter                // Neighborhood — teal pin
+        case transitional           // Neighborhood — teal pin
+        case permanent              // Neighborhood — teal pin
+
+        var minimumTier: ZoomTier {
+            return .neighborhood
+        }
+    }
+
+    // MARK: - Air Quality / Odor Layer
+
+    enum AirQuality {
+        case odorZone               // Neighborhood — brown polygon
+
+        var minimumTier: ZoomTier {
+            return .neighborhood
+        }
+    }
+
+    // MARK: - Global
+
+    enum Global {
+        case userPin                // Always visible — red mappin
+
+        var minimumTier: ZoomTier {
+            return .satellite
+        }
     }
 }
 

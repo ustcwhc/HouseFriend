@@ -178,7 +178,7 @@ Visible area center = 24% from top (= full screen center 50% - 26%)
 
 **Map Layers**
 - [x] Crime: MKTileOverlay pixel heatmap
-- [x] Noise: Bundled roads + Overpass detail, smoke effect rendering
+- [x] Noise: Bundled roads + Overpass detail, smoke effect rendering, loading spinner
 - [x] Schools: 130+ schools with tap detail
 - [x] Superfund: 62 sites
 - [x] Earthquake: USGS real-time
@@ -194,6 +194,7 @@ Visible area center = 24% from top (= full screen center 50% - 26%)
 ### Pending Features
 
 **High Priority**
+- [ ] Loading Animation: Show spinner overlay when switching layers (noise layer done, others pending)
 - [ ] Supportive Housing Expansion: Add SF, Oakland, Berkeley, San Mateo data
 
 **Medium Priority**

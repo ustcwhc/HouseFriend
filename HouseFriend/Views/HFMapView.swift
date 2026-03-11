@@ -79,6 +79,7 @@ struct HFMapView: UIViewRepresentable {
 
         // Track active overlays to diff efficiently
         private var activeCategory: CategoryType?
+        private var lastZoomTier: ZoomTier?
         private var crimeTileOverlay: CrimeTileOverlay?
         private var noisePolylines: [MKPolyline] = []
         private var lastNoiseHash = 0
@@ -211,41 +212,51 @@ struct HFMapView: UIViewRepresentable {
         // MARK: - Annotation management
 
         func updateAnnotations(_ map: MKMapView) {
+            let tier = ZoomTier(region: map.region)
             var wanted: [String: HFAnnotation] = [:]
 
             switch parent.selectedCategory {
             case .schools:
-                for s in parent.schools {
+                let levels = tier.schoolLevelsToShow()
+                for s in parent.schools where levels.contains(s.level) {
                     let key = "school-\(s.id)"
                     wanted[key] = annotationMap[key]
                         ?? HFAnnotation(coordinate: s.coordinate, data: .school(s), key: key)
                 }
             case .superfund:
-                for s in parent.superfundSites {
-                    let key = "sfund-\(s.id)"
-                    wanted[key] = annotationMap[key]
-                        ?? HFAnnotation(coordinate: s.coordinate, data: .superfund(s), key: key)
+                if tier.showsCityAnnotations {
+                    for s in parent.superfundSites {
+                        let key = "sfund-\(s.id)"
+                        wanted[key] = annotationMap[key]
+                            ?? HFAnnotation(coordinate: s.coordinate, data: .superfund(s), key: key)
+                    }
                 }
             case .supportiveHome:
-                for h in parent.housingFacilities {
-                    let key = "house-\(h.id)"
-                    wanted[key] = annotationMap[key]
-                        ?? HFAnnotation(coordinate: h.coordinate, data: .housing(h), key: key)
+                if tier.showsNeighborhoodAnnotations {
+                    for h in parent.housingFacilities {
+                        let key = "house-\(h.id)"
+                        wanted[key] = annotationMap[key]
+                            ?? HFAnnotation(coordinate: h.coordinate, data: .housing(h), key: key)
+                    }
                 }
             case .earthquake:
-                for e in parent.earthquakes {
-                    let key = "quake-\(e.id)"
-                    wanted[key] = annotationMap[key]
-                        ?? HFAnnotation(coordinate: e.coordinate, data: .earthquake(e), key: key)
+                if tier.showsCityAnnotations {
+                    for e in parent.earthquakes {
+                        let key = "quake-\(e.id)"
+                        wanted[key] = annotationMap[key]
+                            ?? HFAnnotation(coordinate: e.coordinate, data: .earthquake(e), key: key)
+                    }
                 }
             case .population:
-                for r in parent.zipRegions {
-                    let key = "zip-\(r.id)"
-                    wanted[key] = annotationMap[key]
-                        ?? HFAnnotation(coordinate: r.center, data: .zip(r), key: key)
+                if tier.showsCountyOverlays {
+                    for r in parent.zipRegions {
+                        let key = "zip-\(r.id)"
+                        wanted[key] = annotationMap[key]
+                            ?? HFAnnotation(coordinate: r.center, data: .zip(r), key: key)
+                    }
                 }
             case .crime:
-                if parent.showCrimeDetails {
+                if parent.showCrimeDetails && tier.showsCrimeMarkers {
                     for m in parent.crimeMarkers {
                         let key = "cm-\(m.id)"
                         wanted[key] = annotationMap[key]
@@ -285,6 +296,13 @@ struct HFMapView: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             guard !suppressRegionCallback else { return }
             parent.onCameraChange(mapView.region)
+
+            // Refresh annotations when zoom tier changes (show/hide by level)
+            let tier = ZoomTier(region: mapView.region)
+            if tier != lastZoomTier {
+                lastZoomTier = tier
+                updateAnnotations(mapView)
+            }
         }
 
         func mapView(_ mapView: MKMapView,

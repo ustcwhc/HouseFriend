@@ -1,6 +1,8 @@
 import Foundation
 import MapKit
 
+// MARK: - Crime data models
+
 struct CrimeIncident: Identifiable {
     let id = UUID()
     let category: String
@@ -15,26 +17,57 @@ struct CrimeStats {
     let incidentCount: Int
 }
 
+// MARK: - CrimeService
+
 class CrimeService: ObservableObject {
     @Published var incidents: [CrimeIncident] = []
     @Published var stats: CrimeStats = CrimeStats(score: 70, label: "Moderate", incidentCount: 0)
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var densityGrid: DensityGrid?
+    @Published var recencyLabel: String = ""
 
-    /// Uses CA DOJ OpenJustice API — returns county/city level crime data
+    // TODO: Register at data.sfgov.org/profile/app_tokens and replace
+    private static let appToken = ""
+
+    // MARK: - Public API
+
+    /// Fetches real crime incidents from all matching city SODA APIs for the given coordinate.
     func fetchNear(lat: Double, lon: Double) {
-        let cacheKey = ResponseCache.cacheKey(layer: .crime, lat: lat, lon: lon)
+        let matchingEndpoints = CityEndpoint.endpointsForRegion(lat: lat, lon: lon, span: 0.04)
+
+        // No endpoints cover this area
+        guard !matchingEndpoints.isEmpty else {
+            DispatchQueue.main.async {
+                self.errorMessage = "Crime data not available for this area"
+                self.incidents = []
+                self.stats = CrimeStats(score: 0, label: "No Data", incidentCount: 0)
+                self.densityGrid = nil
+                self.recencyLabel = ""
+                self.isLoading = false
+            }
+            return
+        }
 
         // Check cache first
+        let cacheKey = ResponseCache.cacheKey(layer: .crime, lat: lat, lon: lon)
         if let cachedData = ResponseCache.shared.get(key: cacheKey, layer: .crime) {
-            if let json = try? JSONSerialization.jsonObject(with: cachedData) as? [[String: Any]],
-               !json.isEmpty {
-                let incidents = Self.parseIncidents(from: json)
-                let score = max(20, 100 - min(incidents.count, 80) * 1)
-                AppLogger.network.info("Crime: loaded \(incidents.count) incidents from cache")
+            if let json = try? JSONSerialization.jsonObject(with: cachedData) as? [String: Any],
+               let allIncidents = json["incidents"] as? [[[String: Any]]],
+               let endpointNames = json["endpoints"] as? [String] {
+                var merged: [CrimeIncident] = []
+                for (index, incidents) in allIncidents.enumerated() {
+                    let name = index < endpointNames.count ? endpointNames[index] : ""
+                    merged.append(contentsOf: parseIncidents(from: incidents, endpointName: name))
+                }
+                let grid = Self.buildGrid(from: merged, lat: lat, lon: lon)
+                let score = Self.densityScore(grid: grid)
+                AppLogger.network.info("Crime: loaded \(merged.count) incidents from cache")
                 DispatchQueue.main.async {
-                    self.incidents = incidents
-                    self.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: incidents.count)
+                    self.incidents = merged
+                    self.densityGrid = grid
+                    self.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: merged.count)
+                    self.recencyLabel = "Based on incidents from last 90 days"
                     self.isLoading = false
                 }
                 return
@@ -43,60 +76,159 @@ class CrimeService: ObservableObject {
 
         isLoading = true
         errorMessage = nil
-        // Try SF Open Data as fallback (more reliable endpoint)
-        let sfUrl = "https://data.sfgov.org/resource/wg3w-h783.json?$limit=100&$order=report_datetime%20DESC"
-        guard let url = URL(string: sfUrl) else {
-            loadMockData(lat: lat, lon: lon); return
+
+        let ninetyDaysAgo = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-90 * 86400))
+        let group = DispatchGroup()
+        var allIncidents: [CrimeIncident] = []
+        var allRawJSON: [[[String: Any]]] = Array(repeating: [], count: matchingEndpoints.count)
+        let endpointNames: [String] = matchingEndpoints.map { $0.name }
+        let lock = NSLock()
+
+        for (index, endpoint) in matchingEndpoints.enumerated() {
+            guard let url = Self.buildURL(endpoint: endpoint, lat: lat, lon: lon, since: ninetyDaysAgo) else {
+                continue
+            }
+
+            group.enter()
+            URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+                defer { group.leave() }
+                guard let self = self else { return }
+
+                guard let data = data, error == nil,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                      !json.isEmpty else {
+                    AppLogger.network.warning("Crime: \(endpoint.name) fetch failed or empty")
+                    return
+                }
+
+                // Field validation (CRIME-06)
+                let missing = Self.validateFields(json, required: endpoint.fieldMapping.requiredFields)
+                if !missing.isEmpty {
+                    AppLogger.network.error("Crime: \(endpoint.name) schema changed — missing \(missing.joined(separator: ", "))")
+                    DispatchQueue.main.async {
+                        self.errorMessage = "Crime data schema changed: missing \(missing.joined(separator: ", "))"
+                    }
+                    return
+                }
+
+                // Truncation warning
+                if json.count == 5000 {
+                    AppLogger.network.warning("Crime: \(endpoint.name) returned exactly 5000 rows — may be truncated")
+                }
+
+                let incidents = self.parseIncidents(from: json, endpointName: endpoint.name)
+                AppLogger.network.info("Crime: \(endpoint.name) returned \(incidents.count) incidents")
+
+                lock.lock()
+                allIncidents.append(contentsOf: incidents)
+                allRawJSON[index] = json
+                lock.unlock()
+            }.resume()
         }
 
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            defer { DispatchQueue.main.async { self?.isLoading = false } }
-            guard let data = data, error == nil,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-                  !json.isEmpty else {
-                AppLogger.network.warning("Crime fetch failed or empty, falling back to mock data")
-                DispatchQueue.main.async {
-                    self?.errorMessage = "Crime data unavailable, using estimates"
-                    self?.loadMockData(lat: lat, lon: lon)
-                }
-                return
+        group.notify(queue: .global(qos: .userInitiated)) { [weak self] in
+            guard let self = self else { return }
+
+            let grid = Self.buildGrid(from: allIncidents, lat: lat, lon: lon)
+            let score = Self.densityScore(grid: grid)
+
+            // Cache the merged raw JSON
+            let cachePayload: [String: Any] = [
+                "incidents": allRawJSON,
+                "endpoints": endpointNames
+            ]
+            if let cacheData = try? JSONSerialization.data(withJSONObject: cachePayload) {
+                ResponseCache.shared.set(data: cacheData, key: cacheKey, layer: .crime)
             }
 
-            let incidents = Self.parseIncidents(from: json)
-            let score = max(20, 100 - min(incidents.count, 80) * 1)
-            ResponseCache.shared.set(data: data, key: cacheKey, layer: .crime)
-            AppLogger.network.info("Crime: fetched \(incidents.count) incidents from network")
+            AppLogger.network.info("Crime: merged \(allIncidents.count) total incidents from \(matchingEndpoints.count) endpoint(s)")
+
             DispatchQueue.main.async {
-                self?.incidents = incidents
-                self?.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: incidents.count)
+                self.incidents = allIncidents
+                self.densityGrid = grid
+                self.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: allIncidents.count)
+                self.recencyLabel = "Based on incidents from last 90 days"
+                self.errorMessage = nil
+                self.isLoading = false
             }
-        }.resume()
+        }
     }
 
-    private static func parseIncidents(from json: [[String: Any]]) -> [CrimeIncident] {
+    // MARK: - URL construction
+
+    private static func buildURL(endpoint: CityEndpoint, lat: Double, lon: Double, since: String) -> URL? {
+        var components = URLComponents(string: endpoint.baseURL)
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(
+                name: "$where",
+                value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),3000) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
+            ),
+            URLQueryItem(name: "$limit", value: "5000")
+        ]
+        if !appToken.isEmpty {
+            queryItems.append(URLQueryItem(name: "$$app_token", value: appToken))
+        }
+        components?.queryItems = queryItems
+        return components?.url
+    }
+
+    // MARK: - Parsing
+
+    private func parseIncidents(from json: [[String: Any]], endpointName: String) -> [CrimeIncident] {
+        switch endpointName {
+        case "San Francisco":
+            return parseSFIncidents(from: json)
+        case "Oakland":
+            return parseOaklandIncidents(from: json)
+        default:
+            return []
+        }
+    }
+
+    private func parseSFIncidents(from json: [[String: Any]]) -> [CrimeIncident] {
         json.compactMap { item -> CrimeIncident? in
             guard let cat = item["incident_category"] as? String,
-                  let latStr = item["latitude"] as? String, let iLat = Double(latStr),
-                  let lonStr = item["longitude"] as? String, let iLon = Double(lonStr) else { return nil }
+                  let latStr = item["latitude"] as? String, let lat = Double(latStr),
+                  let lonStr = item["longitude"] as? String, let lon = Double(lonStr) else { return nil }
+            guard lat.isFinite, lon.isFinite else { return nil }
             return CrimeIncident(
                 category: cat,
                 description: item["incident_description"] as? String ?? cat,
-                coordinate: CLLocationCoordinate2D(latitude: iLat, longitude: iLon),
-                date: Date()
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                date: Self.parseSODADate(item["incident_date"] as? String)
             )
         }
     }
 
-    private func loadMockData(lat: Double, lon: Double) {
-        // Realistic Bay Area crime pattern based on published data
-        // Downtown San Jose and East SJ have higher crime; Cupertino/Sunnyvale lower
-        let isSaferZone = lat > 37.32 && lat < 37.42 && lon < -121.97 // Sunnyvale/Cupertino
-        let isHighCrime = lat > 37.31 && lat < 37.38 && lon > -121.90  // East SJ
-        let baseScore = isSaferZone ? 82 : isHighCrime ? 35 : 58
-
-        incidents = Self.mockIncidents(lat: lat, lon: lon, count: isHighCrime ? 18 : isSaferZone ? 4 : 10)
-        stats = CrimeStats(score: baseScore, label: Self.label(baseScore), incidentCount: incidents.count)
+    private func parseOaklandIncidents(from json: [[String: Any]]) -> [CrimeIncident] {
+        json.compactMap { item -> CrimeIncident? in
+            guard let crimeType = item["crimetype"] as? String,
+                  let location = item["location_1"] as? [String: Any],
+                  let coords = location["coordinates"] as? [Double],
+                  coords.count >= 2 else { return nil }
+            // CRITICAL: GeoJSON is [longitude, latitude]
+            let lon = coords[0]
+            let lat = coords[1]
+            guard lat.isFinite, lon.isFinite else { return nil }
+            return CrimeIncident(
+                category: crimeType,
+                description: item["description"] as? String ?? crimeType,
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                date: Self.parseSODADate(item["datetime"] as? String)
+            )
+        }
     }
+
+    // MARK: - Field validation
+
+    /// Checks that all required fields are present in the first JSON item.
+    /// Returns array of missing field names (empty if all present).
+    private static func validateFields(_ json: [[String: Any]], required: [String]) -> [String] {
+        guard let first = json.first else { return ["Empty response"] }
+        return required.filter { first[$0] == nil }
+    }
+
+    // MARK: - Scoring
 
     static func label(_ score: Int) -> String {
         switch score {
@@ -107,18 +239,42 @@ class CrimeService: ObservableObject {
         }
     }
 
-    static func mockIncidents(lat: Double, lon: Double, count: Int) -> [CrimeIncident] {
-        let types = ["Vehicle Break-In", "Theft", "Vandalism", "Burglary", "Auto Theft", "Assault", "Robbery"]
-        return (0..<count).map { i in
-            CrimeIncident(
-                category: types[i % types.count],
-                description: "\(types[i % types.count]) incident",
-                coordinate: CLLocationCoordinate2D(
-                    latitude:  lat + Double.random(in: -0.015...0.015),
-                    longitude: lon + Double.random(in: -0.018...0.018)
-                ),
-                date: Date().addingTimeInterval(-Double(i) * 86400 * Double.random(in: 0.5...3))
-            )
-        }
+    /// Computes a safety score from the density grid's peak cell count.
+    /// Higher density = lower score. Normalizes against a baseline of 50 incidents per cell.
+    private static func densityScore(grid: DensityGrid?) -> Int {
+        let peakDensity = Double(grid?.maxCount ?? 0)
+        let normalized = min(peakDensity / 50.0, 1.0)
+        let score = max(20, Int(100.0 - normalized * 80.0))
+        return score
+    }
+
+    // MARK: - Grid building
+
+    private static func buildGrid(from incidents: [CrimeIncident], lat: Double, lon: Double) -> DensityGrid {
+        let region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+            span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
+        )
+        return DensityGrid.build(from: incidents, region: region)
+    }
+
+    // MARK: - Date parsing
+
+    private static func parseSODADate(_ dateString: String?) -> Date {
+        guard let dateString = dateString else { return Date() }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: dateString) { return date }
+        // Try without fractional seconds
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: dateString) { return date }
+        // Try Socrata floating timestamp format: "2026-01-15T00:00:00.000"
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        if let date = df.date(from: dateString) { return date }
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        if let date = df.date(from: dateString) { return date }
+        return Date()
     }
 }

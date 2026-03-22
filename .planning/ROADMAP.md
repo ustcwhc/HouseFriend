@@ -46,7 +46,10 @@ Plans:
   3. A visible recency label appears in the neighborhood report ("Based on incidents from last 90 days")
   4. When the Detail toggle is enabled, numbered cluster markers appear over the heatmap showing incident counts per area
   5. A visible error banner appears if the API response is missing expected fields, instead of silently showing placeholder data
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 02-01-PLAN.md — CityEndpoint + DensityGrid models, CrimeService multi-city fetch with field validation
+- [ ] 02-02-PLAN.md — CrimeTileOverlay density grid rendering, cluster markers, ContentView wiring
 
 ### Phase 3: School Data
 **Goal**: School pins appear on the map with real CDE rating data, color-coded by level, and neighborhood report school scoring uses real grades
@@ -129,7 +132,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. API Caching Foundation | 0/2 | Planning complete | - |
-| 2. Real Crime Data | 0/TBD | Not started | - |
+| 2. Real Crime Data | 0/2 | Planning complete | - |
 | 3. School Data | 0/TBD | Not started | - |
 | 4. Dark Mode | 0/TBD | Not started | - |
 | 5. Loading & Layer Polish | 0/TBD | Not started | - |

@@ -9,10 +9,14 @@ struct FieldMapping {
     let category: String
     let datetime: String
     let description: String
+    /// Fields actually present in the JSON response (may differ from geoColumn used in $where)
+    let parseFields: [String]
 
-    /// All fields required for successful parsing.
+    /// All fields required for successful parsing — uses parseFields, not geoColumn,
+    /// because some APIs (SF) expose lat/lon as separate columns even though the
+    /// $where filter uses the geo column name.
     var requiredFields: [String] {
-        [geoColumn, category, datetime, description]
+        parseFields + [category, datetime]
     }
 }
 
@@ -36,7 +40,8 @@ struct CityEndpoint {
                 geoColumn: "point",
                 category: "incident_category",
                 datetime: "incident_date",
-                description: "incident_description"
+                description: "incident_description",
+                parseFields: ["latitude", "longitude", "incident_category", "incident_date"]
             )
         ),
         CityEndpoint(
@@ -47,7 +52,8 @@ struct CityEndpoint {
                 geoColumn: "location_1",
                 category: "crimetype",
                 datetime: "datetime",
-                description: "description"
+                description: "description",
+                parseFields: ["location_1", "crimetype", "datetime"]
             )
         )
     ]

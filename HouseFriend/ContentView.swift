@@ -905,7 +905,8 @@ struct ContentView: View {
     func refreshCrimeIncidents() {
         // Density grid and cluster markers are now driven by CrimeService.densityGrid
         // Just ensure crime data is loaded for the current area
-        guard currentSpan.latitudeDelta < 0.08 else { return }
+        // Removed overly restrictive zoom guard — crime data should load at any zoom level
+        // when the crime layer is active
         let lat = currentCenter.latitude
         let lon = currentCenter.longitude
         crimeService.fetchNear(lat: lat, lon: lon)

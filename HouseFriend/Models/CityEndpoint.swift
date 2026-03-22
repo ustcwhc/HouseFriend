@@ -39,9 +39,9 @@ struct CityEndpoint {
             fieldMapping: FieldMapping(
                 geoColumn: "point",
                 category: "incident_category",
-                datetime: "incident_date",
+                datetime: "incident_datetime",
                 description: "incident_description",
-                parseFields: ["latitude", "longitude", "incident_category", "incident_date"]
+                parseFields: ["latitude", "longitude", "incident_category", "incident_datetime"]
             )
         ),
         CityEndpoint(

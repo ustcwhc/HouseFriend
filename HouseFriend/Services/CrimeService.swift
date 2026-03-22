@@ -77,7 +77,11 @@ class CrimeService: ObservableObject {
         isLoading = true
         errorMessage = nil
 
-        let ninetyDaysAgo = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-90 * 86400))
+        // Socrata floating timestamps use yyyy-MM-dd'T'HH:mm:ss.SSS format (no timezone)
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        let ninetyDaysAgo = df.string(from: Date().addingTimeInterval(-90 * 86400))
         let group = DispatchGroup()
         var allIncidents: [CrimeIncident] = []
         var allRawJSON: [[[String: Any]]] = Array(repeating: [], count: matchingEndpoints.count)
@@ -195,7 +199,7 @@ class CrimeService: ObservableObject {
                 category: cat,
                 description: item["incident_description"] as? String ?? cat,
                 coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-                date: Self.parseSODADate(item["incident_date"] as? String)
+                date: Self.parseSODADate(item["incident_datetime"] as? String)
             )
         }
     }

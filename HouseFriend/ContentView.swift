@@ -255,6 +255,7 @@ struct ContentView: View {
             highlightedZIPId: highlightedZIPId,
             crimeMarkers: [],
             densityGrid: crimeService.densityGrid,
+            crimeHotspots: crimeService.hotspots,
             onCameraChange: { region in
                 currentCenter = region.center
                 currentSpan   = region.span

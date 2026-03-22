@@ -29,6 +29,7 @@ struct HFMapView: UIViewRepresentable {
     let highlightedZIPId: String?
     let crimeMarkers: [CrimeMarker]
     let densityGrid: DensityGrid?
+    let crimeHotspots: [CrimeTileOverlay.Hotspot]
 
     // MARK: - Callbacks → ContentView
     var onCameraChange: (MKCoordinateRegion) -> Void = { _ in }
@@ -137,15 +138,15 @@ struct HFMapView: UIViewRepresentable {
             // Crime: check if density grid changed and needs tile refresh
             if cat == .crime && cat == activeCategory {
                 if let existing = crimeTileOverlay {
-                    // If grid identity changed, replace overlay to force tile re-render
-                    let newGrid = parent.densityGrid
-                    let needsRefresh = (existing.densityGrid == nil && newGrid != nil) ||
-                                       (existing.densityGrid != nil && newGrid == nil) ||
-                                       (existing.densityGrid?.maxCount != newGrid?.maxCount)
+                    // If hotspots changed, replace overlay to force tile re-render
+                    let newSpots = parent.crimeHotspots
+                    let needsRefresh = (existing.hotspots.isEmpty && !newSpots.isEmpty) ||
+                                       (!existing.hotspots.isEmpty && newSpots.isEmpty) ||
+                                       (existing.hotspots.count != newSpots.count)
                     if needsRefresh {
                         map.removeOverlay(existing)
                         let overlay = CrimeTileOverlay()
-                        overlay.densityGrid = newGrid
+                        overlay.hotspots = newSpots
                         crimeTileOverlay = overlay
                         map.addOverlay(overlay, level: .aboveRoads)
                     }
@@ -166,7 +167,7 @@ struct HFMapView: UIViewRepresentable {
             switch cat {
             case .crime:
                 let overlay = CrimeTileOverlay()
-                overlay.densityGrid = parent.densityGrid
+                overlay.hotspots = parent.crimeHotspots
                 crimeTileOverlay = overlay
                 map.addOverlay(overlay, level: .aboveRoads)
 

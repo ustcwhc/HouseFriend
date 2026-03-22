@@ -25,6 +25,7 @@ class CrimeService: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var densityGrid: DensityGrid?
+    @Published var hotspots: [CrimeTileOverlay.Hotspot] = []
     @Published var recencyLabel: String = ""
 
     // TODO: Register at data.sfgov.org/profile/app_tokens and replace
@@ -58,9 +59,8 @@ class CrimeService: ObservableObject {
             return
         }
 
-        // Cache key based on which cities are covered (not viewport location)
-        let cityNames = matchingEndpoints.map { $0.name }.sorted().joined(separator: "+")
-        let cacheKey = "crime_cities_\(cityNames)"
+        // Check cache first
+        let cacheKey = ResponseCache.cacheKey(layer: .crime, lat: lat, lon: lon)
         if let cachedData = ResponseCache.shared.get(key: cacheKey, layer: .crime) {
             if let json = try? JSONSerialization.jsonObject(with: cachedData) as? [String: Any],
                let allIncidents = json["incidents"] as? [[[String: Any]]],
@@ -70,7 +70,7 @@ class CrimeService: ObservableObject {
                     let name = index < endpointNames.count ? endpointNames[index] : ""
                     merged.append(contentsOf: parseIncidents(from: incidents, endpointName: name))
                 }
-                let grid = Self.buildGrid(from: merged, endpoints: matchingEndpoints)
+                let grid = Self.buildGrid(from: merged, lat: lat, lon: lon)
                 let score = Self.densityScore(grid: grid)
                 AppLogger.network.info("Crime: loaded \(merged.count) incidents from cache")
                 DispatchQueue.main.async {
@@ -99,7 +99,7 @@ class CrimeService: ObservableObject {
         let lock = NSLock()
 
         for (index, endpoint) in matchingEndpoints.enumerated() {
-            guard let url = Self.buildURL(endpoint: endpoint, since: ninetyDaysAgo) else {
+            guard let url = Self.buildURL(endpoint: endpoint, lat: lat, lon: lon, since: ninetyDaysAgo) else {
                 continue
             }
 
@@ -143,7 +143,8 @@ class CrimeService: ObservableObject {
         group.notify(queue: .global(qos: .userInitiated)) { [weak self] in
             guard let self = self else { return }
 
-            let grid = Self.buildGrid(from: allIncidents, endpoints: matchingEndpoints)
+            let grid = Self.buildGrid(from: allIncidents, lat: lat, lon: lon)
+            let spots = CrimeTileOverlay.buildHotspots(from: allIncidents)
             let score = Self.densityScore(grid: grid)
 
             // Only cache if we got real data — never cache empty/failed results
@@ -162,6 +163,7 @@ class CrimeService: ObservableObject {
             DispatchQueue.main.async {
                 self.incidents = allIncidents
                 self.densityGrid = grid
+                self.hotspots = spots
                 self.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: allIncidents.count)
                 self.recencyLabel = "Based on incidents from last 90 days"
                 self.errorMessage = nil
@@ -172,18 +174,15 @@ class CrimeService: ObservableObject {
 
     // MARK: - URL construction
 
-    /// Builds a SODA query URL that fetches ALL incidents within the city's bounding box.
-    /// Uses the full city bbox instead of within_circle so the heatmap covers the entire city smoothly.
-    private static func buildURL(endpoint: CityEndpoint, since: String) -> URL? {
-        let bb = endpoint.boundingBox
+    /// Builds a SODA query URL using within_circle for the viewport area.
+    private static func buildURL(endpoint: CityEndpoint, lat: Double, lon: Double, since: String) -> URL? {
         var components = URLComponents(string: endpoint.baseURL)
         var queryItems: [URLQueryItem] = [
             URLQueryItem(
                 name: "$where",
-                value: "\(endpoint.fieldMapping.datetime) > '\(since)' AND \(endpoint.fieldMapping.geoColumn) IS NOT NULL"
+                value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),8000) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
             ),
-            URLQueryItem(name: "$limit", value: "50000"),
-            URLQueryItem(name: "$order", value: "\(endpoint.fieldMapping.datetime) DESC")
+            URLQueryItem(name: "$limit", value: "5000")
         ]
         if !appToken.isEmpty {
             queryItems.append(URLQueryItem(name: "$$app_token", value: appToken))
@@ -270,25 +269,11 @@ class CrimeService: ObservableObject {
 
     // MARK: - Grid building
 
-    /// Builds a density grid covering all matching city bounding boxes.
-    /// Uses the union of all endpoint bounding boxes so the heatmap spans entire cities.
-    private static func buildGrid(from incidents: [CrimeIncident], endpoints: [CityEndpoint]) -> DensityGrid {
-        // Compute union of all city bounding boxes
-        var minLat = 90.0, maxLat = -90.0, minLon = 180.0, maxLon = -180.0
-        for ep in endpoints {
-            minLat = min(minLat, ep.boundingBox.swLat)
-            maxLat = max(maxLat, ep.boundingBox.neLat)
-            minLon = min(minLon, ep.boundingBox.swLon)
-            maxLon = max(maxLon, ep.boundingBox.neLon)
-        }
-        // Add padding so edges fade off-screen
-        let padding = 0.02
-        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
-        let span = MKCoordinateSpan(
-            latitudeDelta: (maxLat - minLat) + padding * 2,
-            longitudeDelta: (maxLon - minLon) + padding * 2
+    private static func buildGrid(from incidents: [CrimeIncident], lat: Double, lon: Double) -> DensityGrid {
+        let region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+            span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
         )
-        let region = MKCoordinateRegion(center: center, span: span)
         return DensityGrid.build(from: incidents, region: region)
     }
 

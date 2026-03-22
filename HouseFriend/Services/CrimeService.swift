@@ -42,7 +42,7 @@ class CrimeService: ObservableObject {
     /// Census tracts for polygon-based heatmap — loaded once on init
     private lazy var censusTracts: [CensusTract] = CensusTractData.allTracts()
 
-    func fetchNear(lat: Double, lon: Double) {
+    func fetchNear(lat: Double, lon: Double, span: Double = 0.06) {
         // Clear stale cache from pre-real-data era on first fetch
         if !hasClearedStaleCache {
             hasClearedStaleCache = true
@@ -104,7 +104,7 @@ class CrimeService: ObservableObject {
         let lock = NSLock()
 
         for (index, endpoint) in matchingEndpoints.enumerated() {
-            guard let url = Self.buildURL(endpoint: endpoint, lat: lat, lon: lon, since: ninetyDaysAgo) else {
+            guard let url = Self.buildURL(endpoint: endpoint, lat: lat, lon: lon, since: ninetyDaysAgo, span: span) else {
                 continue
             }
 
@@ -182,14 +182,36 @@ class CrimeService: ObservableObject {
     // MARK: - URL construction
 
     /// Builds a SODA query URL using within_circle for the viewport area.
-    private static func buildURL(endpoint: CityEndpoint, lat: Double, lon: Double, since: String) -> URL? {
+    /// Radius and limit scale with zoom: zoomed out = larger radius, fewer results; zoomed in = smaller radius, more results.
+    private static func buildURL(endpoint: CityEndpoint, lat: Double, lon: Double, since: String, span: Double) -> URL? {
+        // Progressive sampling: adjust radius and limit based on zoom level
+        let radius: Int
+        let limit: Int
+        if span > 0.5 {
+            // County view (very zoomed out) — broad coverage, light sampling
+            radius = 30000
+            limit = 500
+        } else if span > 0.15 {
+            // City view — moderate coverage
+            radius = 15000
+            limit = 1500
+        } else if span > 0.05 {
+            // Neighborhood view — focused area
+            radius = 8000
+            limit = 3000
+        } else {
+            // Street view (very zoomed in) — full detail
+            radius = 4000
+            limit = 5000
+        }
+
         var components = URLComponents(string: endpoint.baseURL)
         var queryItems: [URLQueryItem] = [
             URLQueryItem(
                 name: "$where",
-                value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),8000) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
+                value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),\(radius)) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
             ),
-            URLQueryItem(name: "$limit", value: "5000")
+            URLQueryItem(name: "$limit", value: "\(limit)")
         ]
         if !appToken.isEmpty {
             queryItems.append(URLQueryItem(name: "$$app_token", value: appToken))

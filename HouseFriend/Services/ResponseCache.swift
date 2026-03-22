@@ -126,6 +126,18 @@ final class ResponseCache {
         memoryCache.removeAllObjects()
     }
 
+    /// Clears all cached data (memory + disk) for a specific layer.
+    func clearLayer(_ layer: CacheLayer) {
+        memoryCache.removeAllObjects()
+        // Remove disk files matching this layer
+        if let files = try? fileManager.contentsOfDirectory(at: diskCacheURL, includingPropertiesForKeys: nil) {
+            for file in files where file.lastPathComponent.hasPrefix(layer.rawValue) {
+                try? fileManager.removeItem(at: file)
+            }
+        }
+        AppLogger.network.info("Cache cleared for layer: \(layer.rawValue)")
+    }
+
     // MARK: - Cache key generation
 
     /// Location-based cache key quantized to 0.01-degree grid cells.

@@ -30,10 +30,19 @@ class CrimeService: ObservableObject {
     // TODO: Register at data.sfgov.org/profile/app_tokens and replace
     private static let appToken = ""
 
+    /// One-time flag to clear stale crime cache from pre-real-data era
+    private var hasClearedStaleCache = false
+
     // MARK: - Public API
 
     /// Fetches real crime incidents from all matching city SODA APIs for the given coordinate.
     func fetchNear(lat: Double, lon: Double) {
+        // Clear stale cache from pre-real-data era on first fetch
+        if !hasClearedStaleCache {
+            hasClearedStaleCache = true
+            ResponseCache.shared.clearLayer(.crime)
+        }
+
         let matchingEndpoints = CityEndpoint.endpointsForRegion(lat: lat, lon: lon, span: 0.04)
 
         // No endpoints cover this area
@@ -136,13 +145,15 @@ class CrimeService: ObservableObject {
             let grid = Self.buildGrid(from: allIncidents, lat: lat, lon: lon)
             let score = Self.densityScore(grid: grid)
 
-            // Cache the merged raw JSON
-            let cachePayload: [String: Any] = [
-                "incidents": allRawJSON,
-                "endpoints": endpointNames
-            ]
-            if let cacheData = try? JSONSerialization.data(withJSONObject: cachePayload) {
-                ResponseCache.shared.set(data: cacheData, key: cacheKey, layer: .crime)
+            // Only cache if we got real data — never cache empty/failed results
+            if !allIncidents.isEmpty {
+                let cachePayload: [String: Any] = [
+                    "incidents": allRawJSON,
+                    "endpoints": endpointNames
+                ]
+                if let cacheData = try? JSONSerialization.data(withJSONObject: cachePayload) {
+                    ResponseCache.shared.set(data: cacheData, key: cacheKey, layer: .crime)
+                }
             }
 
             AppLogger.network.info("Crime: merged \(allIncidents.count) total incidents from \(matchingEndpoints.count) endpoint(s)")

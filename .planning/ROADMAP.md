@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 2 plans
 Plans:
 - [x] 01-01-PLAN.md — ResponseCache singleton with two-level cache (NSCache + disk) and per-layer TTLs (TDD)
-- [ ] 01-02-PLAN.md — Integrate ResponseCache into all 5 network services
+- [x] 01-02-PLAN.md — Integrate ResponseCache into all 5 network services
 
 ### Phase 2: Real Crime Data
 **Goal**: Crime heatmap renders real incident data from SF Open Data and Oakland CrimeWatch, not Gaussian estimates

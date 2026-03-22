@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Fetching the same location twice within the TTL window returns cached data without any network activity (verifiable via console or proxy)
 **Plans:** 2 plans
 Plans:
-- [ ] 01-01-PLAN.md — ResponseCache singleton with two-level cache (NSCache + disk) and per-layer TTLs (TDD)
+- [x] 01-01-PLAN.md — ResponseCache singleton with two-level cache (NSCache + disk) and per-layer TTLs (TDD)
 - [ ] 01-02-PLAN.md — Integrate ResponseCache into all 5 network services
 
 ### Phase 2: Real Crime Data

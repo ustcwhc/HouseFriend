@@ -9,9 +9,9 @@ Requirements for App Store v1.0 release. Each maps to roadmap phases.
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: App has a shared ResponseCache (memory + disk) with per-layer TTLs for all API responses
+- [x] **INFRA-01**: App has a shared ResponseCache (memory + disk) with per-layer TTLs for all API responses
 - [ ] **INFRA-02**: Cache prevents redundant API calls when user pans/zooms within cached region
-- [ ] **INFRA-03**: Cache entries expire based on data freshness (30min earthquake, 1hr air quality, 24hr crime, permanent for bundled data)
+- [x] **INFRA-03**: Cache entries expire based on data freshness (30min earthquake, 1hr air quality, 24hr crime, permanent for bundled data)
 
 ### Crime Data
 
@@ -121,9 +121,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 1 | Pending |
+| INFRA-01 | Phase 1 | Complete |
 | INFRA-02 | Phase 1 | Pending |
-| INFRA-03 | Phase 1 | Pending |
+| INFRA-03 | Phase 1 | Complete |
 | CRIME-01 | Phase 2 | Pending |
 | CRIME-02 | Phase 2 | Pending |
 | CRIME-03 | Phase 2 | Pending |

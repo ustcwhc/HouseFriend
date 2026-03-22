@@ -35,6 +35,12 @@ Users can instantly visualize and score any Bay Area neighborhood across 10 safe
 - [ ] Saved/favorited addresses
 - [ ] App Store preparation (icon, screenshots, description, privacy policy)
 - [ ] Neighborhood report descriptive text per layer
+- [ ] Layer info modals with "What is it?", data source, and limitations (competitor pattern)
+- [ ] School pins with rating number on label + color-coded by rating level
+- [ ] Crime data accuracy disclaimers and privacy obfuscation notes
+- [ ] Superfund NPL status coding (active vs. cleaned-up) + EPA deep links
+- [ ] Electric line substations as additional pins (HIFLD data)
+- [ ] Supportive housing sourced from HUD + Bay Area non-profits
 
 ### Out of Scope
 
@@ -72,6 +78,9 @@ Users can instantly visualize and score any Bay Area neighborhood across 10 safe
 | All state in ContentView | Simple for current scale; may need MVVM if complexity grows | — Pending |
 | Gaussian crime model as placeholder | Allows full UX without real API; replace with real data for v1.0 | — Pending |
 | Bundled road data for noise | Instant load for major roads; Overpass for detail at high zoom | ✓ Good |
+| Layer info modals (competitor pattern) | Every competitor layer has What/Source/Limitations modal; builds user trust | — Pending |
+| HIFLD for electric lines expansion | Federal open dataset, comprehensive 69kV+ coverage with substations | — Pending |
+| HUD + non-profits for supportive housing | More authoritative and complete than web scraping | — Pending |
 
 ## Evolution
 
@@ -91,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-22 after initialization*
+*Last updated: 2026-03-22 after competitive analysis refinement*

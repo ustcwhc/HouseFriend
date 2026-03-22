@@ -46,14 +46,15 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: TBD
 
 ### Phase 3: School Data
-**Goal**: School pins appear on the map with real CDE rating data, and neighborhood report school scoring uses real grades
+**Goal**: School pins appear on the map with real CDE rating data, color-coded by level, and neighborhood report school scoring uses real grades
 **Depends on**: Phase 1
-**Requirements**: SCHOOL-01, SCHOOL-02, SCHOOL-03, SCHOOL-04, SCHOOL-05
+**Requirements**: SCHOOL-01, SCHOOL-02, SCHOOL-03, SCHOOL-04, SCHOOL-05, SCHOOL-06
 **Success Criteria** (what must be TRUE):
-  1. At zoom level 13 or higher, school pins appear on the map with the school name visible
-  2. Tapping a school pin shows a detail sheet with the school name, type (elementary/middle/high), and CDE rating
-  3. The neighborhood report school grade reflects real CDE Dashboard data, not a placeholder value
-  4. The build-time Python script runs without errors and produces a gzip'd JSON bundle used at runtime
+  1. At zoom level 13 or higher, school pins appear with school name and rating number on the label (e.g., "Santa Clara High (10)")
+  2. School pins are color-coded by rating level (green=high, blue=mid, orange/red=low)
+  3. Tapping a school pin shows a detail sheet with name, type, rating, and CAASPP test score summary
+  4. The neighborhood report school grade reflects real CDE Dashboard data, not a placeholder value
+  5. The build-time Python script runs without errors and produces a gzip'd JSON bundle used at runtime
 **Plans**: TBD
 
 ### Phase 4: Dark Mode
@@ -68,15 +69,18 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: TBD
 
 ### Phase 5: Loading & Layer Polish
-**Goal**: All layers show loading feedback, every neighborhood report grade has descriptive text and data attribution, and supportive housing and electric line data are expanded
+**Goal**: All layers show loading feedback, every layer has an info modal with description/source/limitations, data is expanded, and existing layers are enhanced with competitor-inspired details
 **Depends on**: Phase 2, Phase 3
-**Requirements**: POLISH-01, POLISH-02, POLISH-03, DATA-01, DATA-02
+**Requirements**: POLISH-01, POLISH-02, POLISH-03, POLISH-04, POLISH-05, POLISH-06, POLISH-07, DATA-01, DATA-02, DATA-03
 **Success Criteria** (what must be TRUE):
   1. Toggling any of the 10 layers shows a loading spinner while data loads (consistent with the existing noise layer behavior)
   2. Each layer grade in the neighborhood report includes 1-2 sentences explaining what the grade means in plain language
   3. The neighborhood report shows a data source attribution per layer (e.g., "SF Open Data", "USGS", "CDE")
-  4. The supportive housing layer includes data from SF, Oakland, Berkeley, and San Mateo
-  5. The electric lines layer includes sub-115kV distribution lines in addition to transmission lines
+  4. Each layer has an info (?) button that opens a modal with "What is it?", "Data source", and "Limitations" sections
+  5. The crime layer info modal includes data accuracy disclaimer and privacy obfuscation note
+  6. Superfund pins show NPL status (active vs. deleted) with color coding, and detail sheet links to EPA website
+  7. The supportive housing layer includes data from SF, Oakland, Berkeley, and San Mateo (sourced from HUD + non-profits)
+  8. The electric lines layer includes HIFLD 69kV+ lines and substation pins
 **Plans**: TBD
 
 ### Phase 6: Saved Addresses

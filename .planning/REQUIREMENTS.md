@@ -27,17 +27,22 @@ Requirements for App Store v1.0 release. Each maps to roadmap phases.
 
 ### School Data
 
-- [ ] **SCHOOL-01**: School pins display on map at zoom level >= 13 with school name
-- [ ] **SCHOOL-02**: Tap school pin shows detail sheet with name, type (elementary/middle/high), and rating
-- [ ] **SCHOOL-03**: School ratings sourced from CDE California Dashboard data bundled at build time
-- [ ] **SCHOOL-04**: Build-time Python script fetches CDE XLSX + CA Public Schools GeoJSON, joins by CDS code, outputs gzip'd JSON bundle
-- [ ] **SCHOOL-05**: School scoring in neighborhood report uses real rating data instead of placeholder
+- [ ] **SCHOOL-01**: School pins display on map at zoom level >= 13 with school name and rating number on the pin label (e.g., "Santa Clara High (10)")
+- [ ] **SCHOOL-02**: School pins are color-coded by rating level (green=high, blue=mid, orange/red=low)
+- [ ] **SCHOOL-03**: Tap school pin shows detail sheet with name, type (elementary/middle/high), rating, and CAASPP test score summary
+- [ ] **SCHOOL-04**: School ratings sourced from CDE California Dashboard (CAASPP) data bundled at build time
+- [ ] **SCHOOL-05**: Build-time Python script fetches CDE XLSX + CA Public Schools GeoJSON, joins by CDS code, outputs gzip'd JSON bundle
+- [ ] **SCHOOL-06**: School scoring in neighborhood report uses real rating data instead of placeholder
 
 ### Loading & Polish
 
 - [ ] **POLISH-01**: All 10 layers show a loading spinner when switching (consistent with existing noise layer pattern)
 - [ ] **POLISH-02**: Each layer grade in neighborhood report includes 1-2 sentence descriptive text explaining what the grade means
 - [ ] **POLISH-03**: Neighborhood report shows data source attribution per layer (e.g., "SF Open Data", "USGS", "CDE")
+- [ ] **POLISH-04**: Each layer has an info button (?) that opens a modal with "What is it?", "Data source", and "Limitations" sections
+- [ ] **POLISH-05**: Crime layer info modal includes data accuracy disclaimer and privacy obfuscation note (coordinates anonymized to nearest intersection)
+- [ ] **POLISH-06**: Superfund pins show NPL status (active vs. deleted/cleaned-up) with color coding (green = deleted from NPL)
+- [ ] **POLISH-07**: Superfund detail sheet includes a deep link to the EPA website for each site
 
 ### Dark Mode
 
@@ -75,8 +80,9 @@ Requirements for App Store v1.0 release. Each maps to roadmap phases.
 
 ### Data Expansion
 
-- [ ] **DATA-01**: Supportive housing data expanded to include SF, Oakland, Berkeley, San Mateo
-- [ ] **DATA-02**: Electric lines expanded to include sub-115kV distribution lines
+- [ ] **DATA-01**: Supportive housing data expanded to include SF, Oakland, Berkeley, San Mateo using HUD data + non-profit directories (LifeMoves, Abode Services, HomeFirst, HomeKey, CityTeam)
+- [ ] **DATA-02**: Electric lines expanded using HIFLD (Homeland Infrastructure Foundation-Level Data) to include 69kV+ lines
+- [ ] **DATA-03**: Electric lines layer adds substation locations as pins alongside transmission lines
 
 ## v2 Requirements
 
@@ -92,6 +98,10 @@ Deferred to future release. Tracked but not in current roadmap.
 - **ADV-01**: Historical crime trend view (crime over time for a location)
 - **ADV-02**: Additional data layers (transit scores, walkability, flood zones)
 - **ADV-03**: Neighborhood comparison view (side-by-side score cards for 2-3 addresses)
+- **ADV-04**: Population layer multi-zoom granularity (County → ZIP → Census Tract → Census Block)
+- **ADV-05**: School attendance boundary overlays (which school an address attends)
+- **ADV-06**: Crime ML gap-filling for regions with sparse reporting data
+- **ADV-07**: Aviation noise data from Bureau of Transportation model
 
 ## Out of Scope
 
@@ -128,6 +138,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SCHOOL-03 | Phase 3 | Pending |
 | SCHOOL-04 | Phase 3 | Pending |
 | SCHOOL-05 | Phase 3 | Pending |
+| SCHOOL-06 | Phase 3 | Pending |
 | DARK-01 | Phase 4 | Pending |
 | DARK-02 | Phase 4 | Pending |
 | DARK-03 | Phase 4 | Pending |
@@ -136,8 +147,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | POLISH-01 | Phase 5 | Pending |
 | POLISH-02 | Phase 5 | Pending |
 | POLISH-03 | Phase 5 | Pending |
+| POLISH-04 | Phase 5 | Pending |
+| POLISH-05 | Phase 5 | Pending |
+| POLISH-06 | Phase 5 | Pending |
+| POLISH-07 | Phase 5 | Pending |
 | DATA-01 | Phase 5 | Pending |
 | DATA-02 | Phase 5 | Pending |
+| DATA-03 | Phase 5 | Pending |
 | SAVE-01 | Phase 6 | Pending |
 | SAVE-02 | Phase 6 | Pending |
 | SAVE-03 | Phase 6 | Pending |
@@ -157,10 +173,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STORE-07 | Phase 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 43 total
-- Mapped to phases: 43
+- v1 requirements: 51 total
+- Mapped to phases: 51
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-22 — traceability filled after roadmap creation*
+*Last updated: 2026-03-22 — refined with competitor analysis insights*

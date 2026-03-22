@@ -24,7 +24,8 @@ class CrimeTileOverlay: MKTileOverlay {
     }
 
     /// Gaussian radius in miles² — controls how far each hotspot bleeds
-    private let gaussianRadius: Double = 1.5
+    /// Smaller = more granular detail, larger = smoother blending
+    private let gaussianRadius: Double = 0.3
 
     // Degrees-to-miles rough conversion (Bay Area latitude)
     private let mpLat = 69.0
@@ -83,10 +84,13 @@ class CrimeTileOverlay: MKTileOverlay {
         let maxCount = clusters.values.map { $0.count }.max() ?? 1
 
         return clusters.values.map { cluster in
-            Hotspot(
+            // Log scale weight: prevents a few high-count clusters from dominating
+            // log(1+count)/log(1+max) gives 0.0-1.0 range with diminishing returns
+            let logWeight = log(1.0 + Double(cluster.count)) / log(1.0 + Double(maxCount))
+            return Hotspot(
                 lat: cluster.lat,
                 lon: cluster.lon,
-                weight: min(1.0, Double(cluster.count) / Double(max(1, maxCount / 2)))
+                weight: logWeight
             )
         }
     }
@@ -155,8 +159,11 @@ class CrimeTileOverlay: MKTileOverlay {
             value += h.weight * exp(-dist2 / r2)
         }
 
-        // Clamp to [0, 1]
-        return min(1.0, value)
+        // Apply baseline + scale to get visible range without saturation
+        // Raw value can exceed 1.0 in dense areas; compress with diminishing returns
+        let compressed = 1.0 - exp(-value * 2.0)  // asymptotic approach to 1.0
+        guard compressed > 0.05 else { return 0.0 }  // cut off very faint areas
+        return compressed
     }
 
     static func crimeRGB(_ v: Double) -> (UInt8, UInt8, UInt8) {

@@ -111,56 +111,56 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | — | Pending |
-| INFRA-02 | — | Pending |
-| INFRA-03 | — | Pending |
-| CRIME-01 | — | Pending |
-| CRIME-02 | — | Pending |
-| CRIME-03 | — | Pending |
-| CRIME-04 | — | Pending |
-| CRIME-05 | — | Pending |
-| CRIME-06 | — | Pending |
-| CRIME-07 | — | Pending |
-| CRIME-08 | — | Pending |
-| CRIME-09 | — | Pending |
-| SCHOOL-01 | — | Pending |
-| SCHOOL-02 | — | Pending |
-| SCHOOL-03 | — | Pending |
-| SCHOOL-04 | — | Pending |
-| SCHOOL-05 | — | Pending |
-| POLISH-01 | — | Pending |
-| POLISH-02 | — | Pending |
-| POLISH-03 | — | Pending |
-| DARK-01 | — | Pending |
-| DARK-02 | — | Pending |
-| DARK-03 | — | Pending |
-| DARK-04 | — | Pending |
-| DARK-05 | — | Pending |
-| SAVE-01 | — | Pending |
-| SAVE-02 | — | Pending |
-| SAVE-03 | — | Pending |
-| SAVE-04 | — | Pending |
-| SAVE-05 | — | Pending |
-| SHARE-01 | — | Pending |
-| SHARE-02 | — | Pending |
-| SHARE-03 | — | Pending |
-| SHARE-04 | — | Pending |
-| SHARE-05 | — | Pending |
-| STORE-01 | — | Pending |
-| STORE-02 | — | Pending |
-| STORE-03 | — | Pending |
-| STORE-04 | — | Pending |
-| STORE-05 | — | Pending |
-| STORE-06 | — | Pending |
-| STORE-07 | — | Pending |
-| DATA-01 | — | Pending |
-| DATA-02 | — | Pending |
+| INFRA-01 | Phase 1 | Pending |
+| INFRA-02 | Phase 1 | Pending |
+| INFRA-03 | Phase 1 | Pending |
+| CRIME-01 | Phase 2 | Pending |
+| CRIME-02 | Phase 2 | Pending |
+| CRIME-03 | Phase 2 | Pending |
+| CRIME-04 | Phase 2 | Pending |
+| CRIME-05 | Phase 2 | Pending |
+| CRIME-06 | Phase 2 | Pending |
+| CRIME-07 | Phase 2 | Pending |
+| CRIME-08 | Phase 2 | Pending |
+| CRIME-09 | Phase 2 | Pending |
+| SCHOOL-01 | Phase 3 | Pending |
+| SCHOOL-02 | Phase 3 | Pending |
+| SCHOOL-03 | Phase 3 | Pending |
+| SCHOOL-04 | Phase 3 | Pending |
+| SCHOOL-05 | Phase 3 | Pending |
+| DARK-01 | Phase 4 | Pending |
+| DARK-02 | Phase 4 | Pending |
+| DARK-03 | Phase 4 | Pending |
+| DARK-04 | Phase 4 | Pending |
+| DARK-05 | Phase 4 | Pending |
+| POLISH-01 | Phase 5 | Pending |
+| POLISH-02 | Phase 5 | Pending |
+| POLISH-03 | Phase 5 | Pending |
+| DATA-01 | Phase 5 | Pending |
+| DATA-02 | Phase 5 | Pending |
+| SAVE-01 | Phase 6 | Pending |
+| SAVE-02 | Phase 6 | Pending |
+| SAVE-03 | Phase 6 | Pending |
+| SAVE-04 | Phase 6 | Pending |
+| SAVE-05 | Phase 6 | Pending |
+| SHARE-01 | Phase 7 | Pending |
+| SHARE-02 | Phase 7 | Pending |
+| SHARE-03 | Phase 7 | Pending |
+| SHARE-04 | Phase 7 | Pending |
+| SHARE-05 | Phase 7 | Pending |
+| STORE-01 | Phase 8 | Pending |
+| STORE-02 | Phase 8 | Pending |
+| STORE-03 | Phase 8 | Pending |
+| STORE-04 | Phase 8 | Pending |
+| STORE-05 | Phase 8 | Pending |
+| STORE-06 | Phase 8 | Pending |
+| STORE-07 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 43 total
-- Mapped to phases: 0
-- Unmapped: 43
+- Mapped to phases: 43
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-22 after initial definition*
+*Last updated: 2026-03-22 — traceability filled after roadmap creation*

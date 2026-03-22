@@ -31,7 +31,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Panning the map within a region that was recently fetched does not trigger a new network request for that layer
   2. Cache entries for earthquake data expire after 30 minutes; air quality after 1 hour; crime after 24 hours; bundled static data never expires
   3. Fetching the same location twice within the TTL window returns cached data without any network activity (verifiable via console or proxy)
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 01-01-PLAN.md — ResponseCache singleton with two-level cache (NSCache + disk) and per-layer TTLs (TDD)
+- [ ] 01-02-PLAN.md — Integrate ResponseCache into all 5 network services
 
 ### Phase 2: Real Crime Data
 **Goal**: Crime heatmap renders real incident data from SF Open Data and Oakland CrimeWatch, not Gaussian estimates
@@ -125,7 +128,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. API Caching Foundation | 0/TBD | Not started | - |
+| 1. API Caching Foundation | 0/2 | Planning complete | - |
 | 2. Real Crime Data | 0/TBD | Not started | - |
 | 3. School Data | 0/TBD | Not started | - |
 | 4. Dark Mode | 0/TBD | Not started | - |

@@ -209,8 +209,10 @@ class CrimeService: ObservableObject {
     private static func buildURL(endpoint: CityEndpoint, lat: Double, lon: Double, since: String, span: Double) -> URL? {
         // Radius covers the viewport (span in degrees → meters, ~111km per degree)
         let radiusMeters = Int(max(span, 0.02) * 111000)
-        // Sample 1000 incidents max — enough for tract-level density
-        let limit = 1000
+
+        // Random offset for sampling — fetches a random slice of incidents
+        // so the heatmap represents a random sample, not just the most recent
+        let randomOffset = Int.random(in: 0...2000)
 
         var components = URLComponents(string: endpoint.baseURL)
         var queryItems: [URLQueryItem] = [
@@ -218,8 +220,8 @@ class CrimeService: ObservableObject {
                 name: "$where",
                 value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),\(radiusMeters)) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
             ),
-            URLQueryItem(name: "$limit", value: "\(limit)"),
-            URLQueryItem(name: "$order", value: "\(endpoint.fieldMapping.datetime) DESC")
+            URLQueryItem(name: "$limit", value: "200"),
+            URLQueryItem(name: "$offset", value: "\(randomOffset)")
         ]
         if !appToken.isEmpty {
             queryItems.append(URLQueryItem(name: "$$app_token", value: appToken))

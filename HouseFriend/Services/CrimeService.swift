@@ -36,18 +36,24 @@ class CrimeService: ObservableObject {
     /// One-time flag to clear stale crime cache from pre-real-data era
     private var hasClearedStaleCache = false
 
+    /// Crime data loaded flag — once loaded, stays stable across zoom/pan
+    private var crimeDataLoaded = false
+
     // MARK: - Public API
 
     /// Fetches real crime incidents from all matching city SODA APIs for the given coordinate.
     /// Census tracts for polygon-based heatmap — loaded once on init
     private lazy var censusTracts: [CensusTract] = CensusTractData.allTracts()
 
-    func fetchNear(lat: Double, lon: Double, span: Double = 0.06) {
+    func fetchNear(lat: Double, lon: Double) {
         // Clear stale cache from pre-real-data era on first fetch
         if !hasClearedStaleCache {
             hasClearedStaleCache = true
             ResponseCache.shared.clearLayer(.crime)
         }
+
+        // Once crime data is loaded, it stays stable — no re-fetching on pan/zoom
+        guard !crimeDataLoaded else { return }
 
         let matchingEndpoints = CityEndpoint.endpointsForRegion(lat: lat, lon: lon, span: 0.04)
 
@@ -104,7 +110,7 @@ class CrimeService: ObservableObject {
         let lock = NSLock()
 
         for (index, endpoint) in matchingEndpoints.enumerated() {
-            guard let url = Self.buildURL(endpoint: endpoint, lat: lat, lon: lon, since: ninetyDaysAgo, span: span) else {
+            guard let url = Self.buildURL(endpoint: endpoint, since: ninetyDaysAgo) else {
                 continue
             }
 
@@ -175,36 +181,24 @@ class CrimeService: ObservableObject {
                 self.recencyLabel = "Based on incidents from last 90 days"
                 self.errorMessage = nil
                 self.isLoading = false
+                self.crimeDataLoaded = true  // Stable — no more re-fetching
             }
         }
     }
 
     // MARK: - URL construction
 
-    /// Builds a SODA query URL using within_circle for the viewport area.
-    /// Radius and limit scale with zoom: zoomed out = larger radius, fewer results; zoomed in = smaller radius, more results.
-    private static func buildURL(endpoint: CityEndpoint, lat: Double, lon: Double, since: String, span: Double) -> URL? {
-        // Cap at 1000 incidents total for fast heatmap rendering.
-        // Radius scales with zoom — broader view = larger search area.
-        let radius: Int
-        if span > 0.5 {
-            radius = 30000   // County view
-        } else if span > 0.15 {
-            radius = 15000   // City view
-        } else if span > 0.05 {
-            radius = 8000    // Neighborhood view
-        } else {
-            radius = 4000    // Street view
-        }
-        let limit = 1000
-
+    /// Builds a SODA query URL that fetches 1000 most recent incidents for the entire city.
+    /// No viewport dependency — one fetch per city, cached and stable across zoom/pan.
+    private static func buildURL(endpoint: CityEndpoint, since: String) -> URL? {
         var components = URLComponents(string: endpoint.baseURL)
         var queryItems: [URLQueryItem] = [
             URLQueryItem(
                 name: "$where",
-                value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),\(radius)) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
+                value: "\(endpoint.fieldMapping.datetime) > '\(since)' AND \(endpoint.fieldMapping.geoColumn) IS NOT NULL"
             ),
-            URLQueryItem(name: "$limit", value: "\(limit)")
+            URLQueryItem(name: "$limit", value: "1000"),
+            URLQueryItem(name: "$order", value: "\(endpoint.fieldMapping.datetime) DESC")
         ]
         if !appToken.isEmpty {
             queryItems.append(URLQueryItem(name: "$$app_token", value: appToken))

@@ -865,7 +865,7 @@ struct ContentView: View {
     func loadLayerIfNeeded(_ layer: CategoryType) {
         switch layer {
         case .crime:
-            crimeService.fetchNear(lat: currentCenter.latitude, lon: currentCenter.longitude, span: currentSpan.latitudeDelta)
+            crimeService.fetchNear(lat: currentCenter.latitude, lon: currentCenter.longitude)
         case .noise:
             // Noise always re-fetches based on viewport (Overpass API)
             noiseService.fetchForRegion(MKCoordinateRegion(center: currentCenter, span: currentSpan))
@@ -914,7 +914,7 @@ struct ContentView: View {
         // when the crime layer is active
         let lat = currentCenter.latitude
         let lon = currentCenter.longitude
-        crimeService.fetchNear(lat: lat, lon: lon, span: currentSpan.latitudeDelta)
+        crimeService.fetchNear(lat: lat, lon: lon)
     }
 
 

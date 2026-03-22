@@ -154,6 +154,28 @@ class NoiseService: ObservableObject {
         }
 
         lastFetchedRegion = region
+
+        // Check cache for this grid cell before hitting Overpass
+        let centerLat = region.center.latitude
+        let centerLon = region.center.longitude
+        let cacheKey = ResponseCache.cacheKey(layer: .noise, lat: centerLat, lon: centerLon)
+        if let cachedData = ResponseCache.shared.get(key: cacheKey, layer: .noise) {
+            let parsed = Self.parseOSMResponse(cachedData)
+            if !parsed.isEmpty {
+                AppLogger.network.info("Noise: loaded \(parsed.count) detail roads from cache")
+                let overpassIds = Set(parsed.compactMap { $0.wayId })
+                let extraStatic = visibleStatic.filter { road in
+                    guard let wid = road.wayId else { return true }
+                    return !overpassIds.contains(wid)
+                }
+                DispatchQueue.main.async {
+                    self.roads = parsed + extraStatic
+                    self.isLoading = false
+                }
+                return
+            }
+        }
+
         isLoading = true
         errorMessage = nil
 
@@ -173,7 +195,7 @@ class NoiseService: ObservableObject {
             out skel qt;
             """
 
-        fetchFromOverpass(query: query, staticFallback: visibleStatic)
+        fetchFromOverpass(query: query, staticFallback: visibleStatic, cacheKey: cacheKey)
     }
 
     /// Legacy entry point — loads static roads instantly
@@ -217,15 +239,15 @@ class NoiseService: ObservableObject {
 
     // MARK: - Network
 
-    private func fetchFromOverpass(query: String, staticFallback: [NoiseRoad]) {
+    private func fetchFromOverpass(query: String, staticFallback: [NoiseRoad], cacheKey: String) {
         let mirrors = [
             "https://overpass-api.de/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter",
         ]
-        fetchFrom(mirrors: mirrors, query: query, staticFallback: staticFallback)
+        fetchFrom(mirrors: mirrors, query: query, staticFallback: staticFallback, cacheKey: cacheKey)
     }
 
-    private func fetchFrom(mirrors: [String], query: String, staticFallback: [NoiseRoad]) {
+    private func fetchFrom(mirrors: [String], query: String, staticFallback: [NoiseRoad], cacheKey: String) {
         guard let urlStr = mirrors.first, let url = URL(string: urlStr) else {
             DispatchQueue.main.async { self.isLoading = false }
             return
@@ -245,7 +267,7 @@ class NoiseService: ObservableObject {
                 AppLogger.network.warning("Noise fetch failed (\(urlStr)): \(error.localizedDescription)")
                 let remaining = Array(mirrors.dropFirst())
                 if !remaining.isEmpty {
-                    self.fetchFrom(mirrors: remaining, query: query, staticFallback: staticFallback)
+                    self.fetchFrom(mirrors: remaining, query: query, staticFallback: staticFallback, cacheKey: cacheKey)
                 } else {
                     AppLogger.network.error("Noise: all Overpass mirrors exhausted, using static data")
                     DispatchQueue.main.async {
@@ -266,7 +288,10 @@ class NoiseService: ObservableObject {
             }
 
             let parsed = Self.parseOSMResponse(data)
-            AppLogger.network.info("Noise: fetched \(parsed.count) detail roads from Overpass")
+            if !parsed.isEmpty {
+                ResponseCache.shared.set(data: data, key: cacheKey, layer: .noise)
+            }
+            AppLogger.network.info("Noise: fetched \(parsed.count) detail roads from network")
             DispatchQueue.main.async {
                 // Merge: Overpass detail + static roads not already covered
                 let overpassIds = Set(parsed.compactMap { $0.wayId })

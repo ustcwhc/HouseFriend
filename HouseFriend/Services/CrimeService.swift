@@ -23,6 +23,24 @@ class CrimeService: ObservableObject {
 
     /// Uses CA DOJ OpenJustice API — returns county/city level crime data
     func fetchNear(lat: Double, lon: Double) {
+        let cacheKey = ResponseCache.cacheKey(layer: .crime, lat: lat, lon: lon)
+
+        // Check cache first
+        if let cachedData = ResponseCache.shared.get(key: cacheKey, layer: .crime) {
+            if let json = try? JSONSerialization.jsonObject(with: cachedData) as? [[String: Any]],
+               !json.isEmpty {
+                let incidents = Self.parseIncidents(from: json)
+                let score = max(20, 100 - min(incidents.count, 80) * 1)
+                AppLogger.network.info("Crime: loaded \(incidents.count) incidents from cache")
+                DispatchQueue.main.async {
+                    self.incidents = incidents
+                    self.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: incidents.count)
+                    self.isLoading = false
+                }
+                return
+            }
+        }
+
         isLoading = true
         errorMessage = nil
         // Try SF Open Data as fallback (more reliable endpoint)
@@ -44,23 +62,29 @@ class CrimeService: ObservableObject {
                 return
             }
 
-            let incidents = json.compactMap { item -> CrimeIncident? in
-                guard let cat = item["incident_category"] as? String,
-                      let latStr = item["latitude"] as? String, let iLat = Double(latStr),
-                      let lonStr = item["longitude"] as? String, let iLon = Double(lonStr) else { return nil }
-                return CrimeIncident(
-                    category: cat,
-                    description: item["incident_description"] as? String ?? cat,
-                    coordinate: CLLocationCoordinate2D(latitude: iLat, longitude: iLon),
-                    date: Date()
-                )
-            }
+            let incidents = Self.parseIncidents(from: json)
             let score = max(20, 100 - min(incidents.count, 80) * 1)
+            ResponseCache.shared.set(data: data, key: cacheKey, layer: .crime)
+            AppLogger.network.info("Crime: fetched \(incidents.count) incidents from network")
             DispatchQueue.main.async {
                 self?.incidents = incidents
                 self?.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: incidents.count)
             }
         }.resume()
+    }
+
+    private static func parseIncidents(from json: [[String: Any]]) -> [CrimeIncident] {
+        json.compactMap { item -> CrimeIncident? in
+            guard let cat = item["incident_category"] as? String,
+                  let latStr = item["latitude"] as? String, let iLat = Double(latStr),
+                  let lonStr = item["longitude"] as? String, let iLon = Double(lonStr) else { return nil }
+            return CrimeIncident(
+                category: cat,
+                description: item["incident_description"] as? String ?? cat,
+                coordinate: CLLocationCoordinate2D(latitude: iLat, longitude: iLon),
+                date: Date()
+            )
+        }
     }
 
     private func loadMockData(lat: Double, lon: Double) {

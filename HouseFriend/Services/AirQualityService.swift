@@ -13,6 +13,26 @@ class AirQualityService: ObservableObject {
 
     /// Uses Open-Meteo Air Quality API — completely free, no API key needed
     func fetch(lat: Double, lon: Double) {
+        let cacheKey = ResponseCache.cacheKey(layer: .airQuality, lat: lat, lon: lon)
+
+        // Check cache first
+        if let cachedData = ResponseCache.shared.get(key: cacheKey, layer: .airQuality) {
+            if let json = try? JSONSerialization.jsonObject(with: cachedData) as? [String: Any],
+               let current = json["current"] as? [String: Any],
+               let aqi = current["us_aqi"] as? Int {
+                AppLogger.network.info("AirQuality: loaded AQI=\(aqi) from cache")
+                DispatchQueue.main.async {
+                    self.data = AirQualityData(
+                        aqi: aqi,
+                        category: Self.categoryForAQI(aqi),
+                        pollutant: "PM2.5"
+                    )
+                    self.isLoading = false
+                }
+                return
+            }
+        }
+
         isLoading = true
         errorMessage = nil
         let urlString = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=\(lat)&longitude=\(lon)&current=us_aqi,pm2_5,european_aqi"
@@ -31,6 +51,8 @@ class AirQualityService: ObservableObject {
                 }
                 return
             }
+            ResponseCache.shared.set(data: data, key: cacheKey, layer: .airQuality)
+            AppLogger.network.info("AirQuality: fetched AQI=\(aqi) from network")
             DispatchQueue.main.async {
                 self?.data = AirQualityData(
                     aqi: aqi,

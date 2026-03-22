@@ -34,7 +34,6 @@ struct ContentView: View {
     @State private var categories     = NeighborhoodCategory.all
     @State private var isLoadingScores = false
     @State private var showCrimeDetails = false
-    @State private var crimeIncidents: [CrimeMarker] = []
     @State private var selectedSchool: School?
     @State private var selectedSuperfund: SuperfundSite?
     @State private var selectedHousing: SupportiveHousingFacility?
@@ -97,7 +96,6 @@ struct ContentView: View {
                                     .scaleEffect(0.85)
                                     .onChange(of: showCrimeDetails) { _, on in
                                         if on { refreshCrimeIncidents() }
-                                        else { crimeIncidents = [] }
                                     }
                             }
                             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -259,7 +257,7 @@ struct ContentView: View {
             odorZones: odorMapZones(),
             zipRegions: zipRegions,
             highlightedZIPId: highlightedZIPId,
-            crimeMarkers: crimeIncidents,
+            crimeMarkers: [],
             densityGrid: crimeService.densityGrid,
             onCameraChange: { region in
                 currentCenter = region.center
@@ -754,6 +752,23 @@ struct ContentView: View {
                 .cornerRadius(12)
             }
 
+        case .crime:
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Crime Summary").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(crimeService.stats.incidentCount) incidents").font(.caption).foregroundColor(.secondary)
+                }
+                if !crimeService.recencyLabel.isEmpty {
+                    Text(crimeService.recencyLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(12)
+            .background(Color(UIColor.secondarySystemBackground))
+            .cornerRadius(12)
+
         default:
             EmptyView()
         }
@@ -821,7 +836,7 @@ struct ContentView: View {
     func loadLayerIfNeeded(_ layer: CategoryType) {
         switch layer {
         case .crime:
-            break  // CrimeTileOverlay handles rendering; no pre-computation needed
+            crimeService.fetchNear(lat: currentCenter.latitude, lon: currentCenter.longitude)
         case .noise:
             // Noise always re-fetches based on viewport (Overpass API)
             noiseService.fetchForRegion(MKCoordinateRegion(center: currentCenter, span: currentSpan))
@@ -1078,15 +1093,6 @@ struct ContentView: View {
         ]
     }
 
-    func crimeColor(_ v: Double) -> Color {
-        // Reference app palette: deep red → orange → amber → light amber (all opaque)
-        if v >= 0.72 { return Color(red: 0.75, green: 0.05, blue: 0.05) }  // deep red
-        if v >= 0.55 { return Color(red: 0.92, green: 0.25, blue: 0.08) }  // red-orange
-        if v >= 0.40 { return Color(red: 0.98, green: 0.52, blue: 0.15) }  // orange
-        if v >= 0.28 { return Color(red: 0.99, green: 0.72, blue: 0.35) }  // amber
-        if v >= 0.18 { return Color(red: 0.99, green: 0.86, blue: 0.60) }  // light amber
-        return Color(red: 1.00, green: 0.93, blue: 0.78)                    // very light amber
-    }
     func odorColor(_ l: Int) -> Color {
         switch l {
         case 3: return Color(red: 1, green: 0.5, blue: 0.1)

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-03-22T16:53:27.537Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-22T19:24:47.533Z"
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-22)
 
 **Core value:** Users can instantly visualize and score any Bay Area neighborhood across 10 safety/quality dimensions from a single map interface
-**Current focus:** Phase 01 — api-caching-foundation
+**Current focus:** Phase 02 — real-crime-data
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
+Phase: 02 (real-crime-data) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Plan: Not started
 *Updated after each plan completion*
 | Phase 01 P01 | 4min | 1 tasks | 2 files |
 | Phase 01 P02 | 5min | 2 tasks | 5 files |
+| Phase 02 P01 | 4min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,8 @@ Recent decisions affecting current work:
 - [Phase 01]: NSCache memory + FileManager disk two-level cache with injectable dateProvider for testable TTL
 - [Phase 01]: Extracted static parse methods for cache/network code reuse in all services
 - [Phase 01]: NoiseService caches only Overpass dynamic fetches, not bundled static road data
+- [Phase 02]: Oakland dataset ym6k-rx7a used (NOT ppgh-7dqv which has no coordinates)
+- [Phase 02]: Density-normalized scoring: peak cell count / 50 baseline, mapped to 20-100 range
 
 ### Pending Todos
 
@@ -76,6 +79,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-22T16:50:26.840Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-03-22T19:24:47.532Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None

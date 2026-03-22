@@ -48,7 +48,7 @@ Plans:
   5. A visible error banner appears if the API response is missing expected fields, instead of silently showing placeholder data
 **Plans:** 2 plans
 Plans:
-- [ ] 02-01-PLAN.md — CityEndpoint + DensityGrid models, CrimeService multi-city fetch with field validation
+- [x] 02-01-PLAN.md — CityEndpoint + DensityGrid models, CrimeService multi-city fetch with field validation
 - [ ] 02-02-PLAN.md — CrimeTileOverlay density grid rendering, cluster markers, ContentView wiring
 
 ### Phase 3: School Data

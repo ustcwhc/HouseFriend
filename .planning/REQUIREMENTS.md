@@ -15,13 +15,13 @@ Requirements for App Store v1.0 release. Each maps to roadmap phases.
 
 ### Crime Data
 
-- [ ] **CRIME-01**: Crime heatmap renders from real SF Open Data SODA API incidents, not Gaussian estimates
-- [ ] **CRIME-02**: Crime heatmap renders from real Oakland CrimeWatch SODA API incidents for Oakland/East Bay
-- [ ] **CRIME-03**: API requests include explicit `$limit` and `$where` bounding box to avoid silent 1,000-row truncation
-- [ ] **CRIME-04**: Requests include registered Socrata app token to avoid shared IP throttling
-- [ ] **CRIME-05**: Multi-city routing selects SF vs Oakland endpoint based on coordinate location
-- [ ] **CRIME-06**: Field-presence validation surfaces visible error banner on schema changes instead of silently falling back to mock data
-- [ ] **CRIME-07**: Crime layer shows data recency label ("Based on incidents from last 90 days")
+- [x] **CRIME-01**: Crime heatmap renders from real SF Open Data SODA API incidents, not Gaussian estimates
+- [x] **CRIME-02**: Crime heatmap renders from real Oakland CrimeWatch SODA API incidents for Oakland/East Bay
+- [x] **CRIME-03**: API requests include explicit `$limit` and `$where` bounding box to avoid silent 1,000-row truncation
+- [x] **CRIME-04**: Requests include registered Socrata app token to avoid shared IP throttling
+- [x] **CRIME-05**: Multi-city routing selects SF vs Oakland endpoint based on coordinate location
+- [x] **CRIME-06**: Field-presence validation surfaces visible error banner on schema changes instead of silently falling back to mock data
+- [x] **CRIME-07**: Crime layer shows data recency label ("Based on incidents from last 90 days")
 - [ ] **CRIME-08**: Crime detail toggle shows numbered cluster markers (incident counts per area) on top of heatmap when enabled
 - [ ] **CRIME-09**: Cluster markers aggregate by area and display crime count numbers (similar to competitor's Details toggle)
 
@@ -124,13 +124,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-01 | Phase 1 | Complete |
 | INFRA-02 | Phase 1 | Complete |
 | INFRA-03 | Phase 1 | Complete |
-| CRIME-01 | Phase 2 | Pending |
-| CRIME-02 | Phase 2 | Pending |
-| CRIME-03 | Phase 2 | Pending |
-| CRIME-04 | Phase 2 | Pending |
-| CRIME-05 | Phase 2 | Pending |
-| CRIME-06 | Phase 2 | Pending |
-| CRIME-07 | Phase 2 | Pending |
+| CRIME-01 | Phase 2 | Complete |
+| CRIME-02 | Phase 2 | Complete |
+| CRIME-03 | Phase 2 | Complete |
+| CRIME-04 | Phase 2 | Complete |
+| CRIME-05 | Phase 2 | Complete |
+| CRIME-06 | Phase 2 | Complete |
+| CRIME-07 | Phase 2 | Complete |
 | CRIME-08 | Phase 2 | Pending |
 | CRIME-09 | Phase 2 | Pending |
 | SCHOOL-01 | Phase 3 | Pending |

@@ -141,15 +141,8 @@ struct HFMapView: UIViewRepresentable {
 
             // Crime: check if density grid changed and needs tile refresh
             if cat == .crime && cat == activeCategory {
-                // Update crime polygon colors when densities change
-                let newCount = parent.tractCrimeDensities.count
-                if newCount != lastCrimeDensityCount {
-                    lastCrimeDensityCount = newCount
-                    for (zipId, renderer) in crimePolygonRenderers {
-                        applyCrimeStyle(renderer, zipId: zipId)
-                        renderer.setNeedsDisplay()
-                    }
-                }
+                // Refresh visible tracts on pan/zoom or when densities change
+                addVisibleCrimeTracts(map)
                 return
             }
 
@@ -167,13 +160,9 @@ struct HFMapView: UIViewRepresentable {
 
             switch cat {
             case .crime:
-                // Polygon-based crime heatmap — color census tract boundaries by crime density
-                for tract in parent.censusTracts {
-                    let poly = MKPolygon(coordinates: tract.polygon,
-                                        count: tract.polygon.count)
-                    poly.title = "crime:\(tract.id)"
-                    map.addOverlay(poly, level: .aboveRoads)
-                }
+                // Polygon-based crime heatmap — only add tracts visible in current viewport
+                // to avoid Metal buffer overflow (1,772 tracts is too many for MapKit at once)
+                addVisibleCrimeTracts(map)
 
             case .fireHazard:
                 for zone in parent.fireZones {
@@ -391,6 +380,64 @@ struct HFMapView: UIViewRepresentable {
             }
 
             return MKOverlayRenderer(overlay: overlay)
+        }
+
+        // MARK: - Crime tract management (viewport-based)
+
+        /// Adds/removes crime tract polygons based on viewport visibility.
+        /// Only tracts whose center is within the visible map region (+ padding) are added.
+        /// This prevents Metal buffer overflow from adding all 1,772 tracts at once.
+        private func addVisibleCrimeTracts(_ map: MKMapView) {
+            let region = map.region
+            let padding = 0.05  // Extra margin around viewport
+            let minLat = region.center.latitude - region.span.latitudeDelta / 2 - padding
+            let maxLat = region.center.latitude + region.span.latitudeDelta / 2 + padding
+            let minLon = region.center.longitude - region.span.longitudeDelta / 2 - padding
+            let maxLon = region.center.longitude + region.span.longitudeDelta / 2 + padding
+
+            // Determine which tracts should be visible
+            var wantedIds = Set<String>()
+            for tract in parent.censusTracts {
+                let lat = tract.center.latitude
+                let lon = tract.center.longitude
+                if lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon {
+                    wantedIds.insert(tract.id)
+                }
+            }
+
+            // Remove tracts that scrolled out of view
+            let currentIds = Set(crimePolygonRenderers.keys)
+            let toRemove = currentIds.subtracting(wantedIds)
+            if !toRemove.isEmpty {
+                for overlay in map.overlays {
+                    if let poly = overlay as? MKPolygon,
+                       let title = poly.title, title.hasPrefix("crime:") {
+                        let id = String(title.dropFirst(6))
+                        if toRemove.contains(id) {
+                            map.removeOverlay(poly)
+                            crimePolygonRenderers.removeValue(forKey: id)
+                        }
+                    }
+                }
+            }
+
+            // Add tracts that scrolled into view
+            let toAdd = wantedIds.subtracting(currentIds)
+            for tract in parent.censusTracts where toAdd.contains(tract.id) {
+                let poly = MKPolygon(coordinates: tract.polygon, count: tract.polygon.count)
+                poly.title = "crime:\(tract.id)"
+                map.addOverlay(poly, level: .aboveRoads)
+            }
+
+            // Update colors if densities changed
+            let newCount = parent.tractCrimeDensities.count
+            if newCount != lastCrimeDensityCount {
+                lastCrimeDensityCount = newCount
+                for (id, renderer) in crimePolygonRenderers {
+                    applyCrimeStyle(renderer, zipId: id)
+                    renderer.setNeedsDisplay()
+                }
+            }
         }
 
         // MARK: - Crime polygon styling

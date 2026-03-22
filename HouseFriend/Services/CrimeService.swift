@@ -319,16 +319,15 @@ class CrimeService: ObservableObject {
     // MARK: - ZIP polygon crime density
 
     /// Counts incidents per census tract polygon and normalizes to 0.0-1.0 intensity.
-    /// Uses centroid distance pre-filter + ray-casting point-in-polygon test.
+    /// For tracts without real API data (outside SF/Oakland), falls back to Gaussian model.
     static func computeTractDensities(incidents: [CrimeIncident], tracts: [CensusTract]) -> [String: Double] {
+        // Step 1: Count real incidents per tract
         var counts: [String: Int] = [:]
-
         for incident in incidents {
             let lat = incident.coordinate.latitude
             let lon = incident.coordinate.longitude
             guard lat.isFinite, lon.isFinite else { continue }
 
-            // Pre-filter: only check tracts within ~0.05° of the incident (skip distant tracts)
             for tract in tracts {
                 let dLat = abs(lat - tract.center.latitude)
                 let dLon = abs(lon - tract.center.longitude)
@@ -336,20 +335,80 @@ class CrimeService: ObservableObject {
 
                 if Self.pointInPolygon(lat: lat, lon: lon, polygon: tract.polygon) {
                     counts[tract.id, default: 0] += 1
-                    break  // Each incident belongs to one tract
+                    break
                 }
             }
         }
 
-        guard let maxCount = counts.values.max(), maxCount > 0 else { return [:] }
+        // Step 2: Determine which tracts have real API coverage
+        let coveredBBoxes = CityEndpoint.endpoints.map { $0.boundingBox }
 
-        // Normalize with log scale for better color distribution
-        let logMax = log(1.0 + Double(maxCount))
         var densities: [String: Double] = [:]
-        for (zipId, count) in counts {
-            densities[zipId] = log(1.0 + Double(count)) / logMax
+
+        // Normalize real data tracts
+        let maxCount = max(1, counts.values.max() ?? 1)
+        let logMax = log(1.0 + Double(maxCount))
+
+        for tract in tracts {
+            let lat = tract.center.latitude
+            let lon = tract.center.longitude
+
+            // Check if this tract is within any city's API coverage
+            let isCovered = coveredBBoxes.contains { bb in
+                lat >= bb.swLat && lat <= bb.neLat && lon >= bb.swLon && lon <= bb.neLon
+            }
+
+            if isCovered {
+                // Real data — use incident count (0 is valid, means low crime)
+                let count = counts[tract.id] ?? 0
+                densities[tract.id] = log(1.0 + Double(count)) / logMax
+            } else {
+                // Gaussian fallback for uncovered areas
+                let v = gaussianCrimeValue(lat: lat, lon: lon)
+                densities[tract.id] = max(0.0, v - 0.15)  // Subtract baseline, keep 0+ range
+            }
         }
+
         return densities
+    }
+
+    // MARK: - Gaussian model fallback (covers all Bay Area)
+
+    /// Original Gaussian crime model — 21 hotspots + 11 safe zones covering the entire Bay Area.
+    /// Used as fallback for census tracts outside SF/Oakland API coverage.
+    private static func gaussianCrimeValue(lat: Double, lon: Double) -> Double {
+        let hotspots: [(Double, Double, Double, Double)] = [
+            (37.812, -122.285, 1.00, 2.5), (37.928, -122.362, 0.95, 2.0),
+            (37.782, -122.415, 0.90, 1.8), (37.770, -122.220, 0.88, 2.5),
+            (38.105, -122.255, 0.82, 2.0), (37.343, -121.875, 0.82, 3.0),
+            (37.727, -122.390, 0.80, 2.0), (37.998, -121.808, 0.78, 2.0),
+            (37.670, -122.082, 0.72, 2.0), (37.962, -122.343, 0.70, 1.8),
+            (37.338, -121.888, 0.68, 2.5), (38.021, -121.878, 0.65, 1.8),
+            (37.748, -122.198, 0.62, 2.0), (37.758, -122.415, 0.60, 1.8),
+            (37.538, -121.975, 0.50, 2.5), (37.985, -122.058, 0.48, 2.0),
+            (37.976, -122.518, 0.45, 1.8), (37.270, -121.868, 0.45, 2.5),
+            (37.630, -121.888, 0.45, 2.0), (37.432, -121.902, 0.42, 2.0),
+            (37.698, -122.469, 0.38, 1.8),
+        ]
+        let safeZones: [(Double, Double, Double, Double)] = [
+            (37.322, -122.040, 0.50, 4.0), (37.265, -122.030, 0.55, 3.5),
+            (37.440, -122.165, 0.60, 4.5), (37.378, -122.100, 0.55, 3.5),
+            (37.863, -122.248, 0.55, 2.5), (37.882, -122.165, 0.60, 4.0),
+            (37.822, -121.978, 0.58, 4.0), (37.662, -121.878, 0.58, 3.5),
+            (37.895, -122.512, 0.60, 5.0), (37.568, -122.320, 0.45, 4.0),
+            (37.928, -122.108, 0.48, 4.0),
+        ]
+        let mpLat = 69.0, mpLon = 53.0
+        var v = 0.15
+        for h in hotspots {
+            let d2 = pow((lat - h.0) * mpLat, 2) + pow((lon - h.1) * mpLon, 2)
+            v += h.2 * exp(-d2 / (h.3 * h.3))
+        }
+        for s in safeZones {
+            let d2 = pow((lat - s.0) * mpLat, 2) + pow((lon - s.1) * mpLon, 2)
+            v -= s.2 * exp(-d2 / (s.3 * s.3))
+        }
+        return max(0.10, min(1.0, v))
     }
 
     /// Ray-casting point-in-polygon test.

@@ -49,7 +49,7 @@ Plans:
 **Plans:** 2 plans
 Plans:
 - [x] 02-01-PLAN.md — CityEndpoint + DensityGrid models, CrimeService multi-city fetch with field validation
-- [ ] 02-02-PLAN.md — CrimeTileOverlay density grid rendering, cluster markers, ContentView wiring
+- [x] 02-02-PLAN.md — CrimeTileOverlay density grid rendering, cluster markers, ContentView wiring
 
 ### Phase 3: School Data
 **Goal**: School pins appear on the map with real CDE rating data, color-coded by level, and neighborhood report school scoring uses real grades

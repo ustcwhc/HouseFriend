@@ -22,8 +22,8 @@ Requirements for App Store v1.0 release. Each maps to roadmap phases.
 - [x] **CRIME-05**: Multi-city routing selects SF vs Oakland endpoint based on coordinate location
 - [x] **CRIME-06**: Field-presence validation surfaces visible error banner on schema changes instead of silently falling back to mock data
 - [x] **CRIME-07**: Crime layer shows data recency label ("Based on incidents from last 90 days")
-- [ ] **CRIME-08**: Crime detail toggle shows numbered cluster markers (incident counts per area) on top of heatmap when enabled
-- [ ] **CRIME-09**: Cluster markers aggregate by area and display crime count numbers (similar to competitor's Details toggle)
+- [x] **CRIME-08**: Crime detail toggle shows numbered cluster markers (incident counts per area) on top of heatmap when enabled
+- [x] **CRIME-09**: Cluster markers aggregate by area and display crime count numbers (similar to competitor's Details toggle)
 
 ### School Data
 
@@ -131,8 +131,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CRIME-05 | Phase 2 | Complete |
 | CRIME-06 | Phase 2 | Complete |
 | CRIME-07 | Phase 2 | Complete |
-| CRIME-08 | Phase 2 | Pending |
-| CRIME-09 | Phase 2 | Pending |
+| CRIME-08 | Phase 2 | Complete |
+| CRIME-09 | Phase 2 | Complete |
 | SCHOOL-01 | Phase 3 | Pending |
 | SCHOOL-02 | Phase 3 | Pending |
 | SCHOOL-03 | Phase 3 | Pending |

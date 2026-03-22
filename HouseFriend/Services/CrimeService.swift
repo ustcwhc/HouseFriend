@@ -36,8 +36,9 @@ class CrimeService: ObservableObject {
     /// One-time flag to clear stale crime cache from pre-real-data era
     private var hasClearedStaleCache = false
 
-    /// Crime data loaded flag — once loaded, stays stable across zoom/pan
-    private var crimeDataLoaded = false
+    /// Track last fetched region to avoid redundant refetches on small pans
+    private var lastFetchCenter: (lat: Double, lon: Double)?
+    private var lastFetchSpan: Double = 0
 
     // MARK: - Public API
 
@@ -45,20 +46,42 @@ class CrimeService: ObservableObject {
     /// Census tracts for polygon-based heatmap — loaded once on init
     private lazy var censusTracts: [CensusTract] = CensusTractData.allTracts()
 
-    func fetchNear(lat: Double, lon: Double) {
+    func fetchNear(lat: Double, lon: Double, span: Double = 0.06) {
         // Clear stale cache from pre-real-data era on first fetch
         if !hasClearedStaleCache {
             hasClearedStaleCache = true
             ResponseCache.shared.clearLayer(.crime)
         }
 
-        // Once crime data is loaded for ALL cities, stays stable across zoom/pan
-        guard !crimeDataLoaded else { return }
+        // Skip if already loading
+        guard !isLoading else { return }
 
-        // Fetch ALL registered cities at once (1000 each), not just viewport-matching ones.
-        // This way the heatmap has data for SF + Oakland from the start —
-        // no need to re-fetch when panning between cities.
-        let matchingEndpoints = CityEndpoint.endpoints
+        // Skip if viewport hasn't moved much (debounce small pans)
+        if let last = lastFetchCenter {
+            let movedLat = abs(lat - last.lat)
+            let movedLon = abs(lon - last.lon)
+            let threshold = max(0.01, span * 0.3)  // Must move 30% of viewport to refetch
+            if movedLat < threshold && movedLon < threshold && abs(span - lastFetchSpan) < 0.1 {
+                return
+            }
+        }
+
+        let matchingEndpoints = CityEndpoint.endpointsForRegion(lat: lat, lon: lon, span: span)
+
+        // No endpoints cover this area
+        guard !matchingEndpoints.isEmpty else {
+            DispatchQueue.main.async {
+                self.errorMessage = "Crime data not available for this area"
+                self.incidents = []
+                self.stats = CrimeStats(score: 0, label: "No Data", incidentCount: 0)
+                self.densityGrid = nil
+                self.tractCrimeDensities = [:]
+                self.recencyLabel = ""
+            }
+            lastFetchCenter = (lat: lat, lon: lon)
+            lastFetchSpan = span
+            return
+        }
 
         // Check cache first
         let cacheKey = ResponseCache.cacheKey(layer: .crime, lat: lat, lon: lon)
@@ -100,7 +123,7 @@ class CrimeService: ObservableObject {
         let lock = NSLock()
 
         for (index, endpoint) in matchingEndpoints.enumerated() {
-            guard let url = Self.buildURL(endpoint: endpoint, since: ninetyDaysAgo) else {
+            guard let url = Self.buildURL(endpoint: endpoint, lat: lat, lon: lon, since: ninetyDaysAgo, span: span) else {
                 continue
             }
 
@@ -162,6 +185,10 @@ class CrimeService: ObservableObject {
 
             AppLogger.network.info("Crime: merged \(allIncidents.count) total incidents from \(matchingEndpoints.count) endpoint(s)")
 
+            // Save last fetch position for debounce
+            self.lastFetchCenter = (lat: lat, lon: lon)
+            self.lastFetchSpan = span
+
             DispatchQueue.main.async {
                 self.incidents = allIncidents
                 self.densityGrid = grid
@@ -171,23 +198,27 @@ class CrimeService: ObservableObject {
                 self.recencyLabel = "Based on incidents from last 90 days"
                 self.errorMessage = nil
                 self.isLoading = false
-                self.crimeDataLoaded = true  // Stable — no more re-fetching
             }
         }
     }
 
     // MARK: - URL construction
 
-    /// Builds a SODA query URL that fetches 1000 most recent incidents for the entire city.
-    /// No viewport dependency — one fetch per city, cached and stable across zoom/pan.
-    private static func buildURL(endpoint: CityEndpoint, since: String) -> URL? {
+    /// Builds a SODA query URL using within_circle for the viewport area.
+    /// Sample size scales with viewport — larger view = fewer incidents needed.
+    private static func buildURL(endpoint: CityEndpoint, lat: Double, lon: Double, since: String, span: Double) -> URL? {
+        // Radius covers the viewport (span in degrees → meters, ~111km per degree)
+        let radiusMeters = Int(max(span, 0.02) * 111000)
+        // Sample 1000 incidents max — enough for tract-level density
+        let limit = 1000
+
         var components = URLComponents(string: endpoint.baseURL)
         var queryItems: [URLQueryItem] = [
             URLQueryItem(
                 name: "$where",
-                value: "\(endpoint.fieldMapping.datetime) > '\(since)' AND \(endpoint.fieldMapping.geoColumn) IS NOT NULL"
+                value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),\(radiusMeters)) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
             ),
-            URLQueryItem(name: "$limit", value: "1000"),
+            URLQueryItem(name: "$limit", value: "\(limit)"),
             URLQueryItem(name: "$order", value: "\(endpoint.fieldMapping.datetime) DESC")
         ]
         if !appToken.isEmpty {

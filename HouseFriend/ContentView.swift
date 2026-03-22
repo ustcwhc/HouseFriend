@@ -260,6 +260,7 @@ struct ContentView: View {
             zipRegions: zipRegions,
             highlightedZIPId: highlightedZIPId,
             crimeMarkers: crimeIncidents,
+            densityGrid: crimeService.densityGrid,
             onCameraChange: { region in
                 currentCenter = region.center
                 currentSpan   = region.span
@@ -851,32 +852,12 @@ struct ContentView: View {
     }
 
     func refreshCrimeIncidents() {
-        guard currentSpan.latitudeDelta < 0.08 else { crimeIncidents = []; return }
-        // Generate mock crime incidents around the visible area
+        // Density grid and cluster markers are now driven by CrimeService.densityGrid
+        // Just ensure crime data is loaded for the current area
+        guard currentSpan.latitudeDelta < 0.08 else { return }
         let lat = currentCenter.latitude
         let lon = currentCenter.longitude
-        let spread = currentSpan.latitudeDelta * 0.45
-        let types: [CrimeType] = [.violent, .property, .vehicle, .vandalism, .other]
-        var incidents: [CrimeMarker] = []
-        // Get crime density for this area
-        let baseValue = CrimeTileOverlay.crimeValue(lat: lat, lon: lon)
-        let count = Int(baseValue * 25) + 3  // more incidents in high-crime areas
-        for _ in 0..<count {
-            let rLat = lat + Double.random(in: -spread...spread)
-            let rLon = lon + Double.random(in: -spread...spread)
-            let localVal = CrimeTileOverlay.crimeValue(lat: rLat, lon: rLon)
-            let type_ = localVal > 0.6
-                ? (Bool.random() ? CrimeType.violent : CrimeType.property)
-                : types.randomElement()!
-            let days = Int.random(in: 1...30)
-            incidents.append(CrimeMarker(
-                coordinate: CLLocationCoordinate2D(latitude: rLat, longitude: rLon),
-                type: type_,
-                count: Int.random(in: 1...max(1, Int(min(8.0, localVal * 8)))),
-                daysAgo: days
-            ))
-        }
-        crimeIncidents = incidents
+        crimeService.fetchNear(lat: lat, lon: lon)
     }
 
 

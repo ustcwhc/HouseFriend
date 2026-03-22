@@ -28,6 +28,7 @@ struct HFMapView: UIViewRepresentable {
     let zipRegions: [ZIPCodeRegion]
     let highlightedZIPId: String?
     let crimeMarkers: [CrimeMarker]
+    let densityGrid: DensityGrid?
 
     // MARK: - Callbacks → ContentView
     var onCameraChange: (MKCoordinateRegion) -> Void = { _ in }
@@ -133,6 +134,25 @@ struct HFMapView: UIViewRepresentable {
                 return
             }
 
+            // Crime: check if density grid changed and needs tile refresh
+            if cat == .crime && cat == activeCategory {
+                if let existing = crimeTileOverlay {
+                    // If grid identity changed, replace overlay to force tile re-render
+                    let newGrid = parent.densityGrid
+                    let needsRefresh = (existing.densityGrid == nil && newGrid != nil) ||
+                                       (existing.densityGrid != nil && newGrid == nil) ||
+                                       (existing.densityGrid?.maxCount != newGrid?.maxCount)
+                    if needsRefresh {
+                        map.removeOverlay(existing)
+                        let overlay = CrimeTileOverlay()
+                        overlay.densityGrid = newGrid
+                        crimeTileOverlay = overlay
+                        map.addOverlay(overlay, level: .aboveRoads)
+                    }
+                }
+                return
+            }
+
             // For all other categories: only rebuild when category changes
             guard cat != activeCategory else { return }
 
@@ -146,6 +166,7 @@ struct HFMapView: UIViewRepresentable {
             switch cat {
             case .crime:
                 let overlay = CrimeTileOverlay()
+                overlay.densityGrid = parent.densityGrid
                 crimeTileOverlay = overlay
                 map.addOverlay(overlay, level: .aboveRoads)
 
@@ -256,11 +277,18 @@ struct HFMapView: UIViewRepresentable {
                     }
                 }
             case .crime:
-                if parent.showCrimeDetails && tier.showsCrimeMarkers {
-                    for m in parent.crimeMarkers {
-                        let key = "cm-\(m.id)"
-                        wanted[key] = annotationMap[key]
-                            ?? HFAnnotation(coordinate: m.coordinate, data: .crimeMarker(m), key: key)
+                if parent.showCrimeDetails, let grid = parent.densityGrid, tier.showsCrimeMarkers {
+                    for row in 0..<grid.rows {
+                        for col in 0..<grid.cols {
+                            let count = grid.counts[row][col]
+                            guard count > 0 else { continue }
+                            let lat = grid.origin.latitude + Double(row) * grid.cellSize + grid.cellSize / 2
+                            let lon = grid.origin.longitude + Double(col) * grid.cellSize + grid.cellSize / 2
+                            let key = "crime-cluster-\(row)-\(col)"
+                            let coord = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+                            wanted[key] = annotationMap[key]
+                                ?? HFAnnotation(coordinate: coord, data: .crimeCluster(coordinate: coord, count: count), key: key)
+                        }
                     }
                 }
             default:
@@ -463,6 +491,29 @@ struct HFMapView: UIViewRepresentable {
                 v.markerTintColor = UIColor(m.type.markerColor)
                 return v
 
+            case .crimeCluster(_, let count):
+                let v = dequeue(mapView, id: "crimeCluster", as: MKAnnotationView.self)
+                v.annotation = ann
+                let size: CGFloat = count > 20 ? 40 : count > 5 ? 34 : 28
+                let color: UIColor = count > 10 ? .systemRed : count > 5 ? .systemOrange : .systemGray
+                let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+                v.image = renderer.image { ctx in
+                    color.setFill()
+                    ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: size, height: size))
+                    UIColor.white.setFill()
+                    ctx.cgContext.fillEllipse(in: CGRect(x: 2, y: 2, width: size - 4, height: size - 4))
+                    let text = "\(count)" as NSString
+                    let font = UIFont.boldSystemFont(ofSize: size > 34 ? 14 : 11)
+                    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+                    let textSize = text.size(withAttributes: attrs)
+                    let textRect = CGRect(x: (size - textSize.width) / 2,
+                                          y: (size - textSize.height) / 2,
+                                          width: textSize.width, height: textSize.height)
+                    text.draw(in: textRect, withAttributes: attrs)
+                }
+                v.canShowCallout = false
+                return v
+
             case .pin:
                 let v = dequeue(mapView, id: "pin", as: MKMarkerAnnotationView.self)
                 v.annotation      = ann
@@ -480,6 +531,10 @@ struct HFMapView: UIViewRepresentable {
             case .superfund(let s): parent.onSuperfundTap(s)
             case .housing(let h):   parent.onHousingTap(h)
             case .zip(let z):       parent.onZIPTap(z)
+            case .crimeCluster(let coord, _):
+                let span = MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                let region = MKCoordinateRegion(center: coord, span: span)
+                mapView.setRegion(region, animated: true)
             default:                break
             }
         }
@@ -565,6 +620,7 @@ enum HFAnnotationData {
     case earthquake(EarthquakeEvent)
     case zip(ZIPCodeRegion)
     case crimeMarker(CrimeMarker)
+    case crimeCluster(coordinate: CLLocationCoordinate2D, count: Int)
     case pin
 }
 

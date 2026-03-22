@@ -184,26 +184,19 @@ class CrimeService: ObservableObject {
     /// Builds a SODA query URL using within_circle for the viewport area.
     /// Radius and limit scale with zoom: zoomed out = larger radius, fewer results; zoomed in = smaller radius, more results.
     private static func buildURL(endpoint: CityEndpoint, lat: Double, lon: Double, since: String, span: Double) -> URL? {
-        // Progressive sampling: adjust radius and limit based on zoom level
+        // Cap at 1000 incidents total for fast heatmap rendering.
+        // Radius scales with zoom — broader view = larger search area.
         let radius: Int
-        let limit: Int
         if span > 0.5 {
-            // County view (very zoomed out) — broad coverage, light sampling
-            radius = 30000
-            limit = 500
+            radius = 30000   // County view
         } else if span > 0.15 {
-            // City view — moderate coverage
-            radius = 15000
-            limit = 1500
+            radius = 15000   // City view
         } else if span > 0.05 {
-            // Neighborhood view — focused area
-            radius = 8000
-            limit = 3000
+            radius = 8000    // Neighborhood view
         } else {
-            // Street view (very zoomed in) — full detail
-            radius = 4000
-            limit = 5000
+            radius = 4000    // Street view
         }
+        let limit = 1000
 
         var components = URLComponents(string: endpoint.baseURL)
         var queryItems: [URLQueryItem] = [

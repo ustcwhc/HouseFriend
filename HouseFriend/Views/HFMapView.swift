@@ -30,6 +30,7 @@ struct HFMapView: UIViewRepresentable {
     let crimeMarkers: [CrimeMarker]
     let densityGrid: DensityGrid?
     let crimeHotspots: [CrimeTileOverlay.Hotspot]
+    let zipCrimeDensities: [String: Double]
 
     // MARK: - Callbacks → ContentView
     var onCameraChange: (MKCoordinateRegion) -> Void = { _ in }
@@ -83,6 +84,8 @@ struct HFMapView: UIViewRepresentable {
         private var activeCategory: CategoryType?
         private var lastZoomTier: ZoomTier?
         private var crimeTileOverlay: CrimeTileOverlay?
+        private var crimePolygonRenderers: [String: MKPolygonRenderer] = [:]
+        private var lastCrimeDensityCount = 0
         private var noisePolylines: [MKPolyline] = []
         private var lastNoiseHash = 0
 
@@ -137,18 +140,13 @@ struct HFMapView: UIViewRepresentable {
 
             // Crime: check if density grid changed and needs tile refresh
             if cat == .crime && cat == activeCategory {
-                if let existing = crimeTileOverlay {
-                    // If hotspots changed, replace overlay to force tile re-render
-                    let newSpots = parent.crimeHotspots
-                    let needsRefresh = (existing.hotspots.isEmpty && !newSpots.isEmpty) ||
-                                       (!existing.hotspots.isEmpty && newSpots.isEmpty) ||
-                                       (existing.hotspots.count != newSpots.count)
-                    if needsRefresh {
-                        map.removeOverlay(existing)
-                        let overlay = CrimeTileOverlay()
-                        overlay.hotspots = newSpots
-                        crimeTileOverlay = overlay
-                        map.addOverlay(overlay, level: .aboveRoads)
+                // Update crime polygon colors when densities change
+                let newCount = parent.zipCrimeDensities.count
+                if newCount != lastCrimeDensityCount {
+                    lastCrimeDensityCount = newCount
+                    for (zipId, renderer) in crimePolygonRenderers {
+                        applyCrimeStyle(renderer, zipId: zipId)
+                        renderer.setNeedsDisplay()
                     }
                 }
                 return
@@ -161,15 +159,20 @@ struct HFMapView: UIViewRepresentable {
             noisePolylines = []
             lastNoiseHash = 0   // B1 fix: reset so noise rebuild works if we return
             crimeTileOverlay = nil
+            crimePolygonRenderers = [:]
+            lastCrimeDensityCount = 0
             zipRenderers = [:]
             activeCategory = cat
 
             switch cat {
             case .crime:
-                let overlay = CrimeTileOverlay()
-                overlay.hotspots = parent.crimeHotspots
-                crimeTileOverlay = overlay
-                map.addOverlay(overlay, level: .aboveRoads)
+                // Polygon-based crime heatmap — color ZIP boundaries by crime density
+                for region in parent.zipRegions {
+                    let poly = MKPolygon(coordinates: region.polygon,
+                                        count: region.polygon.count)
+                    poly.title = "crime:\(region.id)"
+                    map.addOverlay(poly, level: .aboveRoads)
+                }
 
             case .fireHazard:
                 for zone in parent.fireZones {
@@ -374,6 +377,10 @@ struct HFMapView: UIViewRepresentable {
                     r.fillColor   = UIColor.systemBrown.withAlphaComponent(0.30)
                     r.strokeColor = UIColor.systemBrown.withAlphaComponent(0.55)
                     r.lineWidth   = 1
+                } else if title.hasPrefix("crime:") {
+                    let zipId = String(title.dropFirst(6))
+                    applyCrimeStyle(r, zipId: zipId)
+                    crimePolygonRenderers[zipId] = r
                 } else if title.hasPrefix("zip:") {
                     let zipId = String(title.dropFirst(4))
                     applyZipStyle(r, selected: zipId == parent.highlightedZIPId)
@@ -383,6 +390,37 @@ struct HFMapView: UIViewRepresentable {
             }
 
             return MKOverlayRenderer(overlay: overlay)
+        }
+
+        // MARK: - Crime polygon styling
+
+        private func applyCrimeStyle(_ r: MKPolygonRenderer, zipId: String) {
+            let intensity = parent.zipCrimeDensities[zipId] ?? 0.0
+
+            if intensity <= 0.0 {
+                // No crime data for this ZIP — very light transparent fill
+                r.fillColor = UIColor(red: 0.95, green: 0.93, blue: 0.85, alpha: 0.15)
+                r.strokeColor = UIColor(red: 0.85, green: 0.82, blue: 0.75, alpha: 0.25)
+                r.lineWidth = 0.5
+            } else {
+                // Color gradient matching the competitor: beige → orange → red
+                let (red, green, blue) = crimeRGB(intensity)
+                let fillAlpha = 0.25 + intensity * 0.45  // 0.25-0.70
+                let strokeAlpha = 0.40 + intensity * 0.40  // 0.40-0.80
+                r.fillColor = UIColor(red: red, green: green, blue: blue, alpha: fillAlpha)
+                r.strokeColor = UIColor(red: red, green: green, blue: blue, alpha: strokeAlpha)
+                r.lineWidth = 1.0
+            }
+        }
+
+        /// Crime intensity to RGB color (beige → amber → orange → red)
+        private func crimeRGB(_ v: Double) -> (CGFloat, CGFloat, CGFloat) {
+            if v >= 0.8 { return (191/255.0,  13/255.0,  13/255.0) }  // Dark red
+            if v >= 0.6 { return (235/255.0,  64/255.0,  20/255.0) }  // Orange-red
+            if v >= 0.4 { return (250/255.0, 133/255.0,  38/255.0) }  // Orange
+            if v >= 0.25 { return (254/255.0, 184/255.0,  89/255.0) }  // Amber
+            if v >= 0.1 { return (255/255.0, 219/255.0, 153/255.0) }  // Light amber
+            return              (255/255.0, 238/255.0, 200/255.0)      // Beige
         }
 
         // MARK: - ZIP highlight

@@ -199,6 +199,7 @@ struct ContentView: View {
         .onAppear {
             locationService.requestPermission()
             loadLayerIfNeeded(.population)
+            crimeService.zipRegions = zipRegions
         }
         .onChange(of: activeServiceError) { _, error in
             if let error {
@@ -256,6 +257,7 @@ struct ContentView: View {
             crimeMarkers: [],
             densityGrid: crimeService.densityGrid,
             crimeHotspots: crimeService.hotspots,
+            zipCrimeDensities: crimeService.zipCrimeDensities,
             onCameraChange: { region in
                 currentCenter = region.center
                 currentSpan   = region.span

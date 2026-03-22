@@ -26,6 +26,8 @@ class CrimeService: ObservableObject {
     @Published var errorMessage: String?
     @Published var densityGrid: DensityGrid?
     @Published var hotspots: [CrimeTileOverlay.Hotspot] = []
+    /// Per-ZIP crime intensity (0.0-1.0) for polygon-based heatmap rendering
+    @Published var zipCrimeDensities: [String: Double] = [:]
     @Published var recencyLabel: String = ""
 
     // TODO: Register at data.sfgov.org/profile/app_tokens and replace
@@ -37,6 +39,9 @@ class CrimeService: ObservableObject {
     // MARK: - Public API
 
     /// Fetches real crime incidents from all matching city SODA APIs for the given coordinate.
+    /// ZIP regions reference for polygon-based heatmap — set once from ContentView
+    var zipRegions: [ZIPCodeRegion] = []
+
     func fetchNear(lat: Double, lon: Double) {
         // Clear stale cache from pre-real-data era on first fetch
         if !hasClearedStaleCache {
@@ -145,6 +150,7 @@ class CrimeService: ObservableObject {
 
             let grid = Self.buildGrid(from: allIncidents, lat: lat, lon: lon)
             let spots = CrimeTileOverlay.buildHotspots(from: allIncidents)
+            let zipDensities = Self.computeZIPDensities(incidents: allIncidents, zipRegions: self.zipRegions)
             let score = Self.densityScore(grid: grid)
 
             // Only cache if we got real data — never cache empty/failed results
@@ -164,6 +170,7 @@ class CrimeService: ObservableObject {
                 self.incidents = allIncidents
                 self.densityGrid = grid
                 self.hotspots = spots
+                self.zipCrimeDensities = zipDensities
                 self.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: allIncidents.count)
                 self.recencyLabel = "Based on incidents from last 90 days"
                 self.errorMessage = nil
@@ -275,6 +282,56 @@ class CrimeService: ObservableObject {
             span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
         )
         return DensityGrid.build(from: incidents, region: region)
+    }
+
+    // MARK: - ZIP polygon crime density
+
+    /// Counts incidents per ZIP polygon and normalizes to 0.0-1.0 intensity.
+    /// Uses ray-casting point-in-polygon test.
+    static func computeZIPDensities(incidents: [CrimeIncident], zipRegions: [ZIPCodeRegion]) -> [String: Double] {
+        var counts: [String: Int] = [:]
+
+        for incident in incidents {
+            let lat = incident.coordinate.latitude
+            let lon = incident.coordinate.longitude
+            guard lat.isFinite, lon.isFinite else { continue }
+
+            for region in zipRegions {
+                if Self.pointInPolygon(lat: lat, lon: lon, polygon: region.polygon) {
+                    counts[region.id, default: 0] += 1
+                    break  // Each incident belongs to one ZIP
+                }
+            }
+        }
+
+        guard let maxCount = counts.values.max(), maxCount > 0 else { return [:] }
+
+        // Normalize with log scale for better color distribution
+        let logMax = log(1.0 + Double(maxCount))
+        var densities: [String: Double] = [:]
+        for (zipId, count) in counts {
+            densities[zipId] = log(1.0 + Double(count)) / logMax
+        }
+        return densities
+    }
+
+    /// Ray-casting point-in-polygon test.
+    private static func pointInPolygon(lat: Double, lon: Double, polygon: [CLLocationCoordinate2D]) -> Bool {
+        var inside = false
+        var j = polygon.count - 1
+        for i in 0..<polygon.count {
+            let yi = polygon[i].latitude
+            let xi = polygon[i].longitude
+            let yj = polygon[j].latitude
+            let xj = polygon[j].longitude
+
+            if ((yi > lat) != (yj > lat)) &&
+               (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
+                inside = !inside
+            }
+            j = i
+        }
+        return inside
     }
 
     // MARK: - Date parsing

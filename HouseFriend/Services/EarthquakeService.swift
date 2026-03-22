@@ -26,6 +26,24 @@ class EarthquakeService: ObservableObject {
     func fetch() {
         isLoading = true
         errorMessage = nil
+
+        // Check cache first
+        let cacheKey = ResponseCache.cacheKey(layer: .earthquake)
+        if let cachedData = ResponseCache.shared.get(key: cacheKey, layer: .earthquake) {
+            do {
+                let decoded = try JSONDecoder().decode(USGSResponse.self, from: cachedData)
+                let events = Self.parseEvents(from: decoded)
+                AppLogger.network.info("Earthquake: loaded \(events.count) events from cache")
+                DispatchQueue.main.async {
+                    self.events = events
+                    self.isLoading = false
+                }
+                return
+            } catch {
+                AppLogger.network.warning("Earthquake: cache decode failed, fetching from network")
+            }
+        }
+
         guard let url = URL(string: urlString) else { return }
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
             defer { DispatchQueue.main.async { self?.isLoading = false } }
@@ -36,22 +54,29 @@ class EarthquakeService: ObservableObject {
             }
             do {
                 let decoded = try JSONDecoder().decode(USGSResponse.self, from: data)
-                let events = decoded.features.compactMap { feature -> EarthquakeEvent? in
-                    guard let coords = feature.geometry.coordinates, coords.count >= 2 else { return nil }
-                    return EarthquakeEvent(
-                        magnitude: feature.properties.mag ?? 0,
-                        place: feature.properties.place ?? "Unknown",
-                        coordinate: CLLocationCoordinate2D(latitude: coords[1], longitude: coords[0]),
-                        date: Date(timeIntervalSince1970: Double(feature.properties.time) / 1000.0)
-                    )
-                }
-                AppLogger.network.info("Earthquake: fetched \(events.count) events")
+                let events = Self.parseEvents(from: decoded)
+                ResponseCache.shared.set(data: data, key: cacheKey, layer: .earthquake)
+                AppLogger.network.info("Earthquake: fetched \(events.count) events from network")
                 DispatchQueue.main.async { self?.events = events }
             } catch {
                 AppLogger.network.error("Earthquake parse error: \(error.localizedDescription)")
                 DispatchQueue.main.async { self?.errorMessage = "Failed to parse earthquake data" }
             }
         }.resume()
+    }
+
+    // MARK: - Parsing
+
+    private static func parseEvents(from decoded: USGSResponse) -> [EarthquakeEvent] {
+        decoded.features.compactMap { feature -> EarthquakeEvent? in
+            guard let coords = feature.geometry.coordinates, coords.count >= 2 else { return nil }
+            return EarthquakeEvent(
+                magnitude: feature.properties.mag ?? 0,
+                place: feature.properties.place ?? "Unknown",
+                coordinate: CLLocationCoordinate2D(latitude: coords[1], longitude: coords[0]),
+                date: Date(timeIntervalSince1970: Double(feature.properties.time) / 1000.0)
+            )
+        }
     }
 
     // MARK: - Codable models

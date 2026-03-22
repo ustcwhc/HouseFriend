@@ -19,6 +19,24 @@ class ElectricLinesService: ObservableObject {
     func fetch() {
         isLoading = true
         errorMessage = nil
+
+        // Check cache first
+        let cacheKey = ResponseCache.cacheKey(layer: .electricLines)
+        if let cachedData = ResponseCache.shared.get(key: cacheKey, layer: .electricLines) {
+            do {
+                let geojson = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: cachedData)
+                let parsed = Self.parseLines(from: geojson)
+                AppLogger.network.info("ElectricLines: loaded \(parsed.count) lines from cache")
+                DispatchQueue.main.async {
+                    self.lines = parsed.isEmpty ? Self.mockLines() : parsed
+                    self.isLoading = false
+                }
+                return
+            } catch {
+                AppLogger.network.warning("ElectricLines: cache decode failed, fetching from network")
+            }
+        }
+
         guard let url = URL(string: urlString) else { isLoading = false; return }
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
             defer { DispatchQueue.main.async { self?.isLoading = false } }
@@ -31,21 +49,29 @@ class ElectricLinesService: ObservableObject {
             }
             do {
                 let geojson = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data)
-                let parsed = geojson.features.compactMap { feature -> ElectricLine? in
-                    guard let coords = feature.geometry.coordinates else { return nil }
-                    let points = coords.compactMap { c -> CLLocationCoordinate2D? in
-                        guard c.count >= 2 else { return nil }
-                        return CLLocationCoordinate2D(latitude: c[1], longitude: c[0])
-                    }
-                    guard !points.isEmpty else { return nil }
-                    let voltage = feature.properties.voltage ?? 0
-                    return ElectricLine(coordinates: points, voltage: voltage, type: feature.properties.type ?? "AC")
-                }
+                let parsed = Self.parseLines(from: geojson)
+                ResponseCache.shared.set(data: data, key: cacheKey, layer: .electricLines)
+                AppLogger.network.info("ElectricLines: fetched \(parsed.count) lines from network")
                 DispatchQueue.main.async { self?.lines = parsed.isEmpty ? Self.mockLines() : parsed }
             } catch {
                 DispatchQueue.main.async { self?.lines = Self.mockLines() }
             }
         }.resume()
+    }
+
+    // MARK: - Parsing
+
+    private static func parseLines(from geojson: GeoJSONFeatureCollection) -> [ElectricLine] {
+        geojson.features.compactMap { feature -> ElectricLine? in
+            guard let coords = feature.geometry.coordinates else { return nil }
+            let points = coords.compactMap { c -> CLLocationCoordinate2D? in
+                guard c.count >= 2 else { return nil }
+                return CLLocationCoordinate2D(latitude: c[1], longitude: c[0])
+            }
+            guard !points.isEmpty else { return nil }
+            let voltage = feature.properties.voltage ?? 0
+            return ElectricLine(coordinates: points, voltage: voltage, type: feature.properties.type ?? "AC")
+        }
     }
 
     static func mockLines() -> [ElectricLine] {

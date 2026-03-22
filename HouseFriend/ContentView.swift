@@ -38,6 +38,7 @@ struct ContentView: View {
     @State private var selectedSuperfund: SuperfundSite?
     @State private var selectedHousing: SupportiveHousingFacility?
     @State private var apiErrorMessage: String?
+    @State private var panelDragOffset: CGFloat = 0
 
     /// Collects the first non-nil error from any service
     private var activeServiceError: String? {
@@ -226,12 +227,7 @@ struct ContentView: View {
             }
             // Auto-dismiss neighborhood panel when switching any layer
             if pinnedLocation != nil {
-                pinnedLocation = nil
-                pinnedAddress  = ""
-                for i in categories.indices {
-                    categories[i].score      = nil
-                    categories[i].scoreLabel = nil
-                }
+                dismissNeighborhoodPanel()
             }
         }
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
@@ -266,7 +262,7 @@ struct ContentView: View {
                 if selectedCategory == .noise {
                     noiseService.fetchForRegion(region)
                 }
-                if selectedCategory == .crime && showCrimeDetails {
+                if selectedCategory == .crime {
                     refreshCrimeIncidents()
                 }
             },
@@ -494,12 +490,29 @@ struct ContentView: View {
     // MARK: - Bottom Panel
     var bottomPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Handle
+            // Handle — drag down to dismiss
             HStack {
                 Capsule().fill(Color.secondary.opacity(0.4)).frame(width: 36, height: 4)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        // Only allow downward drag
+                        panelDragOffset = max(0, value.translation.height)
+                    }
+                    .onEnded { value in
+                        if value.translation.height > 100 || value.predictedEndTranslation.height > 200 {
+                            // Dismiss
+                            dismissNeighborhoodPanel()
+                        }
+                        withAnimation(.spring(response: 0.3)) {
+                            panelDragOffset = 0
+                        }
+                    }
+            )
 
             // Address + overall score
             HStack(alignment: .top) {
@@ -512,6 +525,15 @@ struct ContentView: View {
                         .accessibilityIdentifier("pinnedAddress")
                 }
                 Spacer()
+                // Close button
+                Button {
+                    dismissNeighborhoodPanel()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Dismiss report")
                 overallScoreBadge
             }
             .padding(.horizontal, 16)
@@ -555,6 +577,8 @@ struct ContentView: View {
         .background(.regularMaterial)
         .cornerRadius(20, corners: [.topLeft, .topRight])
         .shadow(color: .black.opacity(0.12), radius: 10, y: -4)
+        .offset(y: panelDragOffset)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     // MARK: - Category Detail Section
@@ -863,6 +887,18 @@ struct ContentView: View {
         default:
             // Schools, Superfund, Population: hardcoded, always available
             break
+        }
+    }
+
+    func dismissNeighborhoodPanel() {
+        withAnimation(.spring(response: 0.3)) {
+            pinnedLocation = nil
+            pinnedAddress  = ""
+            panelDragOffset = 0
+            for i in categories.indices {
+                categories[i].score      = nil
+                categories[i].scoreLabel = nil
+            }
         }
     }
 

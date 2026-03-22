@@ -1,7 +1,8 @@
 # Phase 2 Context: Real Crime Data
 
 **Created:** 2026-03-22
-**Phase Goal:** Crime heatmap renders real incident data from SF Open Data and Oakland CrimeWatch (plus San Jose and Berkeley), not Gaussian estimates
+**Phase Goal:** Crime heatmap renders real incident data from SF Open Data and Oakland CrimeWatch, not Gaussian estimates
+**Updated:** 2026-03-22 — San Jose and Berkeley deferred per research findings (see below)
 
 ## Decisions
 
@@ -16,7 +17,7 @@
 - Existing color mapping code (6-tier red gradient) remains unchanged
 - Grid rebuilds when viewport changes significantly (beyond cached region)
 
-**Coverage gaps:** Areas outside SF/Oakland/San Jose/Berkeley show a "Crime data not available for this area" message overlay — no Gaussian fallback, no fake data.
+**Coverage gaps:** Areas outside SF/Oakland show a "Crime data not available for this area" message overlay — no Gaussian fallback, no fake data.
 
 **Scoring:** Crime score in neighborhood report uses **real incident count** — more incidents = lower score. Replace the current `max(20, 100 - min(incidents.count, 80))` formula with a density-normalized score.
 
@@ -36,11 +37,13 @@
 
 **Decision:** Query **all available city APIs** for the current viewport and merge results into a single incident set.
 
-**Cities for v1:**
+**Cities for Phase 2:**
 - San Francisco — SF Open Data SODA API (`data.sfgov.org`, dataset `wg3w-h783`)
-- Oakland — Oakland CrimeWatch SODA API (`data.oaklandca.gov`, dataset `ppgh-7dqv`)
-- San Jose — **needs research** (verify Socrata availability, find dataset ID)
-- Berkeley — **needs research** (verify Socrata availability, find dataset ID)
+- Oakland — Oakland CrimeWatch SODA API (`data.oaklandca.gov`, dataset `ym6k-rx7a`)
+
+**Deferred per RESEARCH.md findings:**
+- San Jose — Uses CKAN (not Socrata), police calls dataset has no coordinate fields (address only). Would require batch geocoding.
+- Berkeley — Returns HTTP 403 on all API access. Dataset is "calls for service" not crime incidents.
 
 **Implementation:**
 - `CrimeService` maintains a registry of city endpoints with bounding boxes

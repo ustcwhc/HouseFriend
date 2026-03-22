@@ -52,23 +52,13 @@ class CrimeService: ObservableObject {
             ResponseCache.shared.clearLayer(.crime)
         }
 
-        // Once crime data is loaded, it stays stable — no re-fetching on pan/zoom
+        // Once crime data is loaded for ALL cities, stays stable across zoom/pan
         guard !crimeDataLoaded else { return }
 
-        let matchingEndpoints = CityEndpoint.endpointsForRegion(lat: lat, lon: lon, span: 0.04)
-
-        // No endpoints cover this area
-        guard !matchingEndpoints.isEmpty else {
-            DispatchQueue.main.async {
-                self.errorMessage = "Crime data not available for this area"
-                self.incidents = []
-                self.stats = CrimeStats(score: 0, label: "No Data", incidentCount: 0)
-                self.densityGrid = nil
-                self.recencyLabel = ""
-                self.isLoading = false
-            }
-            return
-        }
+        // Fetch ALL registered cities at once (1000 each), not just viewport-matching ones.
+        // This way the heatmap has data for SF + Oakland from the start —
+        // no need to re-fetch when panning between cities.
+        let matchingEndpoints = CityEndpoint.endpoints
 
         // Check cache first
         let cacheKey = ResponseCache.cacheKey(layer: .crime, lat: lat, lon: lon)

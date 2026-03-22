@@ -26,8 +26,8 @@ class CrimeService: ObservableObject {
     @Published var errorMessage: String?
     @Published var densityGrid: DensityGrid?
     @Published var hotspots: [CrimeTileOverlay.Hotspot] = []
-    /// Per-ZIP crime intensity (0.0-1.0) for polygon-based heatmap rendering
-    @Published var zipCrimeDensities: [String: Double] = [:]
+    /// Per-tract crime intensity (0.0-1.0) for polygon-based heatmap rendering
+    @Published var tractCrimeDensities: [String: Double] = [:]
     @Published var recencyLabel: String = ""
 
     // TODO: Register at data.sfgov.org/profile/app_tokens and replace
@@ -39,8 +39,8 @@ class CrimeService: ObservableObject {
     // MARK: - Public API
 
     /// Fetches real crime incidents from all matching city SODA APIs for the given coordinate.
-    /// ZIP regions reference for polygon-based heatmap — set once from ContentView
-    var zipRegions: [ZIPCodeRegion] = []
+    /// Census tracts for polygon-based heatmap — loaded once on init
+    private lazy var censusTracts: [CensusTract] = CensusTractData.allTracts()
 
     func fetchNear(lat: Double, lon: Double) {
         // Clear stale cache from pre-real-data era on first fetch
@@ -150,7 +150,7 @@ class CrimeService: ObservableObject {
 
             let grid = Self.buildGrid(from: allIncidents, lat: lat, lon: lon)
             let spots = CrimeTileOverlay.buildHotspots(from: allIncidents)
-            let zipDensities = Self.computeZIPDensities(incidents: allIncidents, zipRegions: self.zipRegions)
+            let tractDensities = Self.computeTractDensities(incidents: allIncidents, tracts: self.censusTracts)
             let score = Self.densityScore(grid: grid)
 
             // Only cache if we got real data — never cache empty/failed results
@@ -170,7 +170,7 @@ class CrimeService: ObservableObject {
                 self.incidents = allIncidents
                 self.densityGrid = grid
                 self.hotspots = spots
-                self.zipCrimeDensities = zipDensities
+                self.tractCrimeDensities = tractDensities
                 self.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: allIncidents.count)
                 self.recencyLabel = "Based on incidents from last 90 days"
                 self.errorMessage = nil
@@ -286,9 +286,9 @@ class CrimeService: ObservableObject {
 
     // MARK: - ZIP polygon crime density
 
-    /// Counts incidents per ZIP polygon and normalizes to 0.0-1.0 intensity.
-    /// Uses ray-casting point-in-polygon test.
-    static func computeZIPDensities(incidents: [CrimeIncident], zipRegions: [ZIPCodeRegion]) -> [String: Double] {
+    /// Counts incidents per census tract polygon and normalizes to 0.0-1.0 intensity.
+    /// Uses centroid distance pre-filter + ray-casting point-in-polygon test.
+    static func computeTractDensities(incidents: [CrimeIncident], tracts: [CensusTract]) -> [String: Double] {
         var counts: [String: Int] = [:]
 
         for incident in incidents {
@@ -296,10 +296,15 @@ class CrimeService: ObservableObject {
             let lon = incident.coordinate.longitude
             guard lat.isFinite, lon.isFinite else { continue }
 
-            for region in zipRegions {
-                if Self.pointInPolygon(lat: lat, lon: lon, polygon: region.polygon) {
-                    counts[region.id, default: 0] += 1
-                    break  // Each incident belongs to one ZIP
+            // Pre-filter: only check tracts within ~0.05° of the incident (skip distant tracts)
+            for tract in tracts {
+                let dLat = abs(lat - tract.center.latitude)
+                let dLon = abs(lon - tract.center.longitude)
+                guard dLat < 0.05, dLon < 0.05 else { continue }
+
+                if Self.pointInPolygon(lat: lat, lon: lon, polygon: tract.polygon) {
+                    counts[tract.id, default: 0] += 1
+                    break  // Each incident belongs to one tract
                 }
             }
         }

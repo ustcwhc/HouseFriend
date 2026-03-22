@@ -25,6 +25,7 @@ struct ContentView: View {
     @State private var isSearchFocused = false
     // Population / ZIP layer
     @State private var zipRegions: [ZIPCodeRegion] = ZIPCodeData.allZIPs()
+    @State private var censusTracts: [CensusTract] = CensusTractData.allTracts()
     @State private var selectedZIP: ZIPCodeRegion?
     @State private var highlightedZIPId: String? = nil
     @State private var currentSpan   = MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
@@ -199,7 +200,7 @@ struct ContentView: View {
         .onAppear {
             locationService.requestPermission()
             loadLayerIfNeeded(.population)
-            crimeService.zipRegions = zipRegions
+            // Census tracts load lazily inside CrimeService
         }
         .onChange(of: activeServiceError) { _, error in
             if let error {
@@ -257,7 +258,8 @@ struct ContentView: View {
             crimeMarkers: [],
             densityGrid: crimeService.densityGrid,
             crimeHotspots: crimeService.hotspots,
-            zipCrimeDensities: crimeService.zipCrimeDensities,
+            tractCrimeDensities: crimeService.tractCrimeDensities,
+            censusTracts: censusTracts,
             onCameraChange: { region in
                 currentCenter = region.center
                 currentSpan   = region.span

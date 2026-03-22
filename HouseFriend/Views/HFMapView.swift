@@ -30,7 +30,8 @@ struct HFMapView: UIViewRepresentable {
     let crimeMarkers: [CrimeMarker]
     let densityGrid: DensityGrid?
     let crimeHotspots: [CrimeTileOverlay.Hotspot]
-    let zipCrimeDensities: [String: Double]
+    let tractCrimeDensities: [String: Double]
+    let censusTracts: [CensusTract]
 
     // MARK: - Callbacks → ContentView
     var onCameraChange: (MKCoordinateRegion) -> Void = { _ in }
@@ -141,7 +142,7 @@ struct HFMapView: UIViewRepresentable {
             // Crime: check if density grid changed and needs tile refresh
             if cat == .crime && cat == activeCategory {
                 // Update crime polygon colors when densities change
-                let newCount = parent.zipCrimeDensities.count
+                let newCount = parent.tractCrimeDensities.count
                 if newCount != lastCrimeDensityCount {
                     lastCrimeDensityCount = newCount
                     for (zipId, renderer) in crimePolygonRenderers {
@@ -166,11 +167,11 @@ struct HFMapView: UIViewRepresentable {
 
             switch cat {
             case .crime:
-                // Polygon-based crime heatmap — color ZIP boundaries by crime density
-                for region in parent.zipRegions {
-                    let poly = MKPolygon(coordinates: region.polygon,
-                                        count: region.polygon.count)
-                    poly.title = "crime:\(region.id)"
+                // Polygon-based crime heatmap — color census tract boundaries by crime density
+                for tract in parent.censusTracts {
+                    let poly = MKPolygon(coordinates: tract.polygon,
+                                        count: tract.polygon.count)
+                    poly.title = "crime:\(tract.id)"
                     map.addOverlay(poly, level: .aboveRoads)
                 }
 
@@ -395,7 +396,7 @@ struct HFMapView: UIViewRepresentable {
         // MARK: - Crime polygon styling
 
         private func applyCrimeStyle(_ r: MKPolygonRenderer, zipId: String) {
-            let intensity = parent.zipCrimeDensities[zipId] ?? 0.0
+            let intensity = parent.tractCrimeDensities[zipId] ?? 0.0
 
             if intensity <= 0.0 {
                 // No crime data for this ZIP — very light transparent fill

@@ -176,7 +176,7 @@ class CrimeService: ObservableObject {
         var queryItems: [URLQueryItem] = [
             URLQueryItem(
                 name: "$where",
-                value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),3000) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
+                value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),6000) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
             ),
             URLQueryItem(name: "$limit", value: "5000")
         ]
@@ -266,9 +266,11 @@ class CrimeService: ObservableObject {
     // MARK: - Grid building
 
     private static func buildGrid(from incidents: [CrimeIncident], lat: Double, lon: Double) -> DensityGrid {
+        // Use a larger region (0.12°) than viewport so grid edges are off-screen
+        // Combined with DensityGrid's edge fade, this eliminates visible rectangles
         let region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-            span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
+            span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
         )
         return DensityGrid.build(from: incidents, region: region)
     }

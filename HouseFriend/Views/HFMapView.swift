@@ -240,13 +240,52 @@ extension HFMapView {
         }
     }
 
-    // MARK: - ZIP Polygons Layer (Task 2)
+    // MARK: - ZIP Polygons Layer
 
-    /// ZIP code polygons with labels and highlight — implemented in Task 2.
+    /// ZIP code polygons with highlight support and text labels at centroids.
+    /// 445 ZIP regions rendered via Mapbox vector tile engine (no manual culling).
     @MapboxMaps.MapContentBuilder
     var zipLayerContent: some MapboxMaps.MapContent {
-        // Placeholder — full implementation in Task 2
-        if false { Puck2D() }
+        if selectedCategory == .population, !zipRegions.isEmpty {
+            // Polygon source — Mapbox default tolerance (0.375) handles simplification
+            GeoJSONSource(id: "zip-polygons")
+                .data(.featureCollection(zipPolygonFeatureCollection))
+
+            // Fill: default faint gold, highlighted = pink
+            FillLayer(id: "zip-fill", source: "zip-polygons")
+                .fillColor(Exp(.match) {
+                    Exp(.get) { "isHighlighted" }
+                    "true";  "rgba(255,45,85,0.28)"   // systemPink-ish
+                    "rgba(255,235,77,0.06)"            // faint gold default
+                })
+                .fillOpacity(1.0)
+
+            // Stroke: highlighted = pink, default = gold
+            LineLayer(id: "zip-stroke", source: "zip-polygons")
+                .lineColor(Exp(.match) {
+                    Exp(.get) { "isHighlighted" }
+                    "true";  "rgba(255,45,85,0.85)"
+                    "rgba(212,175,55,0.70)"
+                })
+                .lineWidth(Exp(.match) {
+                    Exp(.get) { "isHighlighted" }
+                    "true";  2.5
+                    1.5
+                })
+
+            // Label source — separate Point features at each ZIP centroid
+            GeoJSONSource(id: "zip-labels")
+                .data(.featureCollection(zipLabelFeatureCollection))
+
+            // ZIP code text labels at centroids
+            SymbolLayer(id: "zip-labels", source: "zip-labels")
+                .textField(Exp(.get) { "zipId" })
+                .textSize(10.0)
+                .textColor(StyleColor(UIColor.darkText))
+                .textHaloColor(StyleColor(UIColor.white.withAlphaComponent(0.75)))
+                .textHaloWidth(1.0)
+                .textAllowOverlap(false)
+        }
     }
 
     // MARK: - Noise Roads Layer (Task 3)
@@ -285,6 +324,30 @@ extension HFMapView {
         let features = odorZones.map { zone -> Feature in
             var feature = Feature(geometry: .polygon(Polygon([zone.coordinates])))
             feature.properties = ["value": .number(zone.value)]
+            return feature
+        }
+        return FeatureCollection(features: features)
+    }
+
+    /// ZIP regions → FeatureCollection of Polygons with zipId and isHighlighted properties.
+    private var zipPolygonFeatureCollection: FeatureCollection {
+        let features = zipRegions.map { region -> Feature in
+            var feature = Feature(geometry: .polygon(Polygon([region.polygon])))
+            let highlighted = (region.id == highlightedZIPId) ? "true" : "false"
+            feature.properties = [
+                "zipId": .string(region.id),
+                "isHighlighted": .string(highlighted)
+            ]
+            return feature
+        }
+        return FeatureCollection(features: features)
+    }
+
+    /// ZIP centroids → FeatureCollection of Points for SymbolLayer labels.
+    private var zipLabelFeatureCollection: FeatureCollection {
+        let features = zipRegions.map { region -> Feature in
+            var feature = Feature(geometry: .point(Point(region.center)))
+            feature.properties = ["zipId": .string(region.id)]
             return feature
         }
         return FeatureCollection(features: features)

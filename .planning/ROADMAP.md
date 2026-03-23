@@ -66,12 +66,12 @@ Plans:
   6. 445 ZIP polygons render without lag (Mapbox vector tile engine handles viewport culling)
   7. All annotation types (schools, superfund, earthquake, housing) are tappable
   8. CrimeTileOverlay.swift and NoiseSmokeRenderer.swift are deleted
-**Plans:** 1/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 - [x] 02.1-01-PLAN.md — Mapbox SPM dependency, token loading, ZoomTier migration, HFMapView rewrite, ContentView Viewport wiring
-- [ ] 02.1-02-PLAN.md — Polygon/polyline layers (fire, electric, odor, ZIP, noise smoke)
-- [ ] 02.1-03-PLAN.md — Crime HeatmapLayer and all annotation types (schools, superfund, earthquake, housing, clusters, pin)
+- [x] 02.1-02-PLAN.md — Polygon/polyline layers (fire, electric, odor, ZIP, noise smoke)
+- [x] 02.1-03-PLAN.md — Crime HeatmapLayer and all annotation types (schools, superfund, earthquake, housing, clusters, pin)
 - [ ] 02.1-04-PLAN.md — Cleanup (delete old renderers, move Hotspot type) and visual verification checkpoint
 
 ### Phase 3: School Data
@@ -156,7 +156,7 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5 → 6 → 7 
 |-------|----------------|--------|-----------|
 | 1. API Caching Foundation | 2/2 | Complete | - |
 | 2. Real Crime Data | 2/2 | Complete | - |
-| 02.1. Mapbox Migration | 1/4 | In Progress|  |
+| 02.1. Mapbox Migration | 3/4 | In Progress|  |
 | 3. School Data | 0/TBD | Not started | - |
 | 4. Dark Mode | 0/TBD | Not started | - |
 | 5. Loading & Layer Polish | 0/TBD | Not started | - |

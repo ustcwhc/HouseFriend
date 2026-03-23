@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02.1-01-PLAN.md
-last_updated: "2026-03-23T05:58:54.087Z"
+stopped_at: Completed 02.1-03-PLAN.md
+last_updated: "2026-03-23T06:13:59.812Z"
 progress:
   total_phases: 9
   completed_phases: 2
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 7
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-22)
 ## Current Position
 
 Phase: 02.1 (mapbox-migration) — EXECUTING
-Plan: 2 of 4
+Plan: 4 of 4
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Plan: 2 of 4
 | Phase 02 P01 | 4min | 2 tasks | 3 files |
 | Phase 02 P02 | 4min | 2 tasks | 3 files |
 | Phase 02.1 P01 | 4min | 2 tasks | 4 files |
+| Phase 02.1 P03 | 11min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,7 @@ Recent decisions affecting current work:
 - [Phase 02]: Overlay replacement (remove+add) for tile invalidation on grid change
 - [Phase 02.1]: Fully qualify MapboxMaps.Map/MapReader/MapStyle to avoid SwiftUI Map ambiguity when MapKit is co-imported
 - [Phase 02.1]: spanForZoom/zoomForSpan converters bridge Mapbox zoom levels with existing MKCoordinateSpan-based services
+- [Phase 02.1]: Use @_spi(Experimental) import MapboxMaps for declarative GeoJSONSource; rgba() CSS strings for expression colors; fully qualify MapboxMaps.MapContent to resolve ambiguity
 
 ### Pending Todos
 
@@ -89,6 +91,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T05:58:54.085Z
-Stopped at: Completed 02.1-01-PLAN.md
+Last session: 2026-03-23T06:13:45.487Z
+Stopped at: Completed 02.1-03-PLAN.md
 Resume file: None

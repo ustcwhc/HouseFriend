@@ -1,6 +1,6 @@
 import SwiftUI
 @_spi(Experimental) import MapboxMaps
-import MapKit   // CLLocationCoordinate2D, MKCoordinateRegion (used by service types)
+import CoreLocation  // CLLocationCoordinate2D (MapKit no longer needed after Mapbox migration)
 import Turf     // Feature, FeatureCollection, Point for GeoJSON sources
 
 // Disambiguate MapContent/MapContentBuilder (exists in both MapboxMaps and _MapKit_SwiftUI)
@@ -28,7 +28,7 @@ struct HFMapView: View {
     let highlightedZIPId: String?
     let crimeMarkers: [CrimeMarker]
     let densityGrid: DensityGrid?
-    let crimeHotspots: [CrimeTileOverlay.Hotspot]
+    let crimeHotspots: [CrimeHotspot]
     let tractCrimeDensities: [String: Double]
     let censusTracts: [CensusTract]
 

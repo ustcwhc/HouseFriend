@@ -17,6 +17,16 @@ struct CrimeStats {
     let incidentCount: Int
 }
 
+// MARK: - CrimeHotspot
+
+/// Hotspot derived from real crime data -- coordinate + weight.
+/// Moved from CrimeTileOverlay (deleted) during Mapbox migration.
+struct CrimeHotspot {
+    let lat: Double
+    let lon: Double
+    let weight: Double  // 0.0-1.0
+}
+
 // MARK: - CrimeService
 
 class CrimeService: ObservableObject {
@@ -25,7 +35,7 @@ class CrimeService: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var densityGrid: DensityGrid?
-    @Published var hotspots: [CrimeTileOverlay.Hotspot] = []
+    @Published var hotspots: [CrimeHotspot] = []
     /// Per-tract crime intensity (0.0-1.0) for polygon-based heatmap rendering
     @Published var tractCrimeDensities: [String: Double] = [:]
     @Published var recencyLabel: String = ""
@@ -187,7 +197,7 @@ class CrimeService: ObservableObject {
             }
 
             let grid = Self.buildGrid(from: allIncidents, lat: lat, lon: lon)
-            let spots = CrimeTileOverlay.buildHotspots(from: allIncidents)
+            let spots = Self.buildHotspots(from: allIncidents)
             var tractDensities = Self.computeTractDensities(incidents: allIncidents, tracts: self.censusTracts)
             // Merge in pre-computed bundled densities (San Jose, etc.) — no runtime point-in-polygon
             for (tractId, density) in self.bundledTractDensities {
@@ -326,6 +336,44 @@ class CrimeService: ObservableObject {
     private static func validateFields(_ json: [[String: Any]], required: [String]) -> [String] {
         guard let first = json.first else { return ["Empty response"] }
         return required.filter { first[$0] == nil }
+    }
+
+    // MARK: - Build hotspots from real incidents
+
+    /// Clusters real incidents into Gaussian hotspots for smooth heatmap rendering.
+    /// Moved from CrimeTileOverlay (deleted) during Mapbox migration.
+    static func buildHotspots(from incidents: [CrimeIncident]) -> [CrimeHotspot] {
+        guard !incidents.isEmpty else { return [] }
+
+        // Finer clustering grid (0.002 deg ~ 200m) for granular hotspots
+        let cellSize = 0.002
+        var clusters: [String: (lat: Double, lon: Double, count: Int)] = [:]
+
+        for incident in incidents {
+            let lat = incident.coordinate.latitude
+            let lon = incident.coordinate.longitude
+            guard lat.isFinite, lon.isFinite else { continue }
+
+            let row = Int(lat / cellSize)
+            let col = Int(lon / cellSize)
+            let key = "\(row)_\(col)"
+
+            if var existing = clusters[key] {
+                let n = Double(existing.count)
+                existing.lat = (existing.lat * n + lat) / (n + 1)
+                existing.lon = (existing.lon * n + lon) / (n + 1)
+                existing.count += 1
+                clusters[key] = existing
+            } else {
+                clusters[key] = (lat: lat, lon: lon, count: 1)
+            }
+        }
+
+        let maxCount = clusters.values.map { $0.count }.max() ?? 1
+        return clusters.values.map { cluster in
+            let logWeight = log(1.0 + Double(cluster.count)) / log(1.0 + Double(maxCount))
+            return CrimeHotspot(lat: cluster.lat, lon: cluster.lon, weight: logWeight)
+        }
     }
 
     // MARK: - Scoring

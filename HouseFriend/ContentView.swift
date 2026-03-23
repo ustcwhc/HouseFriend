@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import MapboxMaps
 
 struct ContentView: View {
     @StateObject private var locationService   = LocationService()
@@ -14,9 +15,11 @@ struct ContentView: View {
     @StateObject private var noiseService      = NoiseService()
     @StateObject private var populationService = PopulationService()
 
-    @State private var mapRegion = MKCoordinateRegion(
+    @State private var mapViewport: Viewport = .camera(
         center: CLLocationCoordinate2D(latitude: 37.450, longitude: -122.050),
-        span: MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
+        zoom: 14,
+        bearing: 0,
+        pitch: 0
     )
     @State private var selectedCategory: CategoryType = .population
     @State private var searchText = ""
@@ -217,7 +220,8 @@ struct ContentView: View {
             let coord = loc.coordinate
             currentCenter = coord
             currentSpan   = MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
-            mapRegion     = MKCoordinateRegion(center: coord, span: currentSpan)
+            mapViewport   = .camera(center: coord, zoom: zoomForSpan(currentSpan),
+                                    bearing: 0, pitch: 0)
         }
         .onChange(of: selectedCategory) { _, _ in
             // Auto-dismiss ZIP drawer when switching any layer
@@ -238,10 +242,10 @@ struct ContentView: View {
 
     }
 
-    // MARK: - Map (HFMapView — UIKit MKMapView for full overlay control)
+    // MARK: - Map (HFMapView — Mapbox SwiftUI Map)
     var mapLayer: some View {
         HFMapView(
-            region: $mapRegion,
+            viewport: $mapViewport,
             selectedCategory: selectedCategory,
             showCrimeDetails: showCrimeDetails,
             pinnedLocation: pinnedLocation,
@@ -260,12 +264,11 @@ struct ContentView: View {
             crimeHotspots: crimeService.hotspots,
             tractCrimeDensities: crimeService.tractCrimeDensities,
             censusTracts: censusTracts,
-            onCameraChange: { region in
-                currentCenter = region.center
-                currentSpan   = region.span
-                mapRegion     = region
+            onCameraChange: { center, zoom in
+                currentCenter = center
+                currentSpan   = spanForZoom(zoom)
                 if selectedCategory == .noise {
-                    noiseService.fetchForRegion(region)
+                    noiseService.fetchForRegion(MKCoordinateRegion(center: center, span: spanForZoom(zoom)))
                 }
                 if selectedCategory == .crime {
                     refreshCrimeIncidents()
@@ -298,8 +301,9 @@ struct ContentView: View {
                 )
                 currentCenter = adjustedCenter
                 currentSpan   = MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: lonSpan)
-                mapRegion     = MKCoordinateRegion(center: adjustedCenter,
-                                                   span: currentSpan)
+                mapViewport   = .camera(center: adjustedCenter,
+                                        zoom: zoomForSpan(currentSpan),
+                                        bearing: 0, pitch: 0)
             },
             onMapTap: { coord in
                 // tap in non-population layers: no-op (handled by long press now)
@@ -847,7 +851,8 @@ struct ContentView: View {
             if let loc = locationService.location {
                 currentCenter = loc.coordinate
                 currentSpan = MKCoordinateSpan(latitudeDelta: 0.04, longitudeDelta: 0.04)
-                mapRegion = MKCoordinateRegion(center: currentCenter, span: currentSpan)
+                mapViewport = .camera(center: currentCenter, zoom: zoomForSpan(currentSpan),
+                                      bearing: 0, pitch: 0)
                 loadAllData(coord: currentCenter)
             }
         } label: {
@@ -924,7 +929,24 @@ struct ContentView: View {
             latitudeDelta: max(0.002, min(180, currentSpan.latitudeDelta * factor)),
             longitudeDelta: max(0.002, min(360, currentSpan.longitudeDelta * factor))
         )
-        mapRegion = MKCoordinateRegion(center: currentCenter, span: currentSpan)
+        mapViewport = .camera(center: currentCenter, zoom: zoomForSpan(currentSpan),
+                              bearing: 0, pitch: 0)
+    }
+
+    // MARK: - Mapbox zoom <-> MapKit span conversion
+
+    /// Convert a Mapbox zoom level (0-22) to an approximate MKCoordinateSpan.
+    /// Used to keep services that expect MKCoordinateRegion working during migration.
+    private func spanForZoom(_ zoom: Double) -> MKCoordinateSpan {
+        let latDelta = 360.0 / pow(2.0, zoom)
+        return MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: latDelta)
+    }
+
+    /// Convert an MKCoordinateSpan to an approximate Mapbox zoom level.
+    /// Used when programmatically setting the viewport from span-based logic.
+    private func zoomForSpan(_ span: MKCoordinateSpan) -> Double {
+        let zoom = log2(360.0 / max(span.latitudeDelta, 0.001))
+        return min(22, max(0, zoom))
     }
 
     // MARK: - Score helpers
@@ -983,7 +1005,8 @@ struct ContentView: View {
         searchResults = []
         currentCenter = c
         currentSpan = MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.03)
-        mapRegion = MKCoordinateRegion(center: c, span: currentSpan)
+        mapViewport = .camera(center: c, zoom: zoomForSpan(currentSpan),
+                              bearing: 0, pitch: 0)
         loadAllData(coord: c)
         computeScores(coord: c)
     }

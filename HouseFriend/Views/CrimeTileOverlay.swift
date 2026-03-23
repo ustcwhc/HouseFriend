@@ -23,7 +23,8 @@ class CrimeTileOverlay: MKTileOverlay {
     }
 
     /// Gaussian radius in miles² — controls how far each hotspot bleeds
-    private let gaussianRadius: Double = 0.4
+    /// 0.15 = ~800ft, gives fine-grained street-level hotspots
+    private let gaussianRadius: Double = 0.15
 
     // Degrees-to-miles rough conversion (Bay Area latitude)
     private let mpLat = 69.0
@@ -78,7 +79,8 @@ class CrimeTileOverlay: MKTileOverlay {
     static func buildHotspots(from incidents: [CrimeIncident]) -> [Hotspot] {
         guard !incidents.isEmpty else { return [] }
 
-        let cellSize = 0.005
+        // Finer clustering grid (0.002° ≈ 200m) for granular hotspots
+        let cellSize = 0.002
         var clusters: [String: (lat: Double, lon: Double, count: Int)] = [:]
 
         for incident in incidents {
@@ -189,8 +191,8 @@ class CrimeTileOverlay: MKTileOverlay {
             value += h.weight * exp(-dist2 / r2)
         }
 
-        let compressed = 1.0 - exp(-value * 2.5)
-        guard compressed > 0.03 else { return 0.0 }
+        let compressed = 1.0 - exp(-value * 4.0)  // Steeper curve = more contrast between hot/cold
+        guard compressed > 0.04 else { return 0.0 }
         return compressed
     }
 
@@ -206,8 +208,9 @@ class CrimeTileOverlay: MKTileOverlay {
             v -= s.2 * exp(-d2 / (s.3 * s.3))
         }
         // Shift down so low-crime areas are more transparent
-        let shifted = max(0.0, v - 0.20)
-        return min(1.0, shifted)
+        // More aggressive shift so only actual hotspots glow, not entire cities
+        let shifted = max(0.0, v - 0.30)
+        return min(1.0, shifted * 1.5)
     }
 
     // MARK: - Gas/glow color gradient (for dark map background)

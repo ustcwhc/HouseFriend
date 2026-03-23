@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02.1-02-PLAN.md
-last_updated: "2026-03-23T06:14:21.558Z"
+stopped_at: "Completed 02.1-04-PLAN.md (Task 2 checkpoint: visual verification pending)"
+last_updated: "2026-03-23T06:18:56.948Z"
 progress:
   total_phases: 9
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -53,6 +53,7 @@ Plan: 4 of 4
 | Phase 02.1 P01 | 4min | 2 tasks | 4 files |
 | Phase 02.1 P03 | 11min | 2 tasks | 1 files |
 | Phase 02.1 P02 | 12min | 3 tasks | 1 files |
+| Phase 02.1 P04 | 2min | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,8 @@ Recent decisions affecting current work:
 - [Phase 02.1]: Use @_spi(Experimental) import MapboxMaps for declarative GeoJSONSource; rgba() CSS strings for expression colors; fully qualify MapboxMaps.MapContent to resolve ambiguity
 - [Phase 02.1]: rgba string literals for expression colors (StyleColor init returns optional)
 - [Phase 02.1]: Helper functions for layers needing filter property (not chainable in MapContent builder)
+- [Phase 02.1]: Moved CrimeHotspot struct to CrimeService.swift (co-located with service)
+- [Phase 02.1]: Replaced import MapKit with import CoreLocation in HFMapView after full Mapbox migration
 
 ### Pending Todos
 
@@ -94,6 +97,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T06:14:21.557Z
-Stopped at: Completed 02.1-02-PLAN.md
+Last session: 2026-03-23T06:18:56.946Z
+Stopped at: Completed 02.1-04-PLAN.md (Task 2 checkpoint: visual verification pending)
 Resume file: None

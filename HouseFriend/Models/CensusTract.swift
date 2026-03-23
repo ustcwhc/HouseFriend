@@ -56,6 +56,11 @@ struct CensusTractData {
 
     // MARK: - Gzip decompression (same approach as NoiseService)
 
+    /// Public accessor for gzip decompression (used by CrimeService for bundled data)
+    static func gunzipPublic(_ data: Data) -> Data? {
+        return gunzip(data)
+    }
+
     private static func gunzip(_ data: Data) -> Data? {
         guard data.count > 18 else { return nil }
         // Skip gzip header to get raw deflate stream

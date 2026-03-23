@@ -46,6 +46,9 @@ class CrimeService: ObservableObject {
     /// Census tracts for polygon-based heatmap — loaded once on init
     private lazy var censusTracts: [CensusTract] = CensusTractData.allTracts()
 
+    /// Bundled geocoded crime data (cities without live APIs)
+    private lazy var bundledIncidents: [CrimeIncident] = Self.loadBundledCrimeData()
+
     func fetchNear(lat: Double, lon: Double, span: Double = 0.06) {
         // Clear stale cache from pre-real-data era on first fetch
         if !hasClearedStaleCache {
@@ -186,7 +189,9 @@ class CrimeService: ObservableObject {
 
             let grid = Self.buildGrid(from: allIncidents, lat: lat, lon: lon)
             let spots = CrimeTileOverlay.buildHotspots(from: allIncidents)
-            let tractDensities = Self.computeTractDensities(incidents: allIncidents, tracts: self.censusTracts)
+            // Merge API incidents with bundled geocoded data (San Jose, etc.)
+            let mergedForTracts = allIncidents + self.bundledIncidents
+            let tractDensities = Self.computeTractDensities(incidents: mergedForTracts, tracts: self.censusTracts)
             let score = Self.densityScore(grid: grid)
 
             // Only cache if we got real data — never cache empty/failed results
@@ -402,6 +407,37 @@ class CrimeService: ObservableObject {
             j = i
         }
         return inside
+    }
+
+    // MARK: - Bundled crime data (geocoded offline)
+
+    /// Loads bundled geocoded crime data for cities without live SODA APIs.
+    /// Currently: San Jose (geocoded via US Census Bureau batch geocoder)
+    private static func loadBundledCrimeData() -> [CrimeIncident] {
+        var allIncidents: [CrimeIncident] = []
+
+        // San Jose
+        if let url = Bundle.main.url(forResource: "sanjose_crime_geocoded.json", withExtension: "gz"),
+           let compressed = try? Data(contentsOf: url),
+           let decompressed = CensusTractData.gunzipPublic(compressed),
+           let json = try? JSONSerialization.jsonObject(with: decompressed) as? [String: Any],
+           let incidents = json["incidents"] as? [[String: Any]] {
+            for item in incidents {
+                if let lat = item["lat"] as? Double,
+                   let lon = item["lon"] as? Double,
+                   lat.isFinite, lon.isFinite {
+                    allIncidents.append(CrimeIncident(
+                        category: item["category"] as? String ?? "Unknown",
+                        description: item["category"] as? String ?? "Unknown",
+                        coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                        date: Date()
+                    ))
+                }
+            }
+            AppLogger.network.info("Crime: loaded \(allIncidents.count) bundled incidents (San Jose)")
+        }
+
+        return allIncidents
     }
 
     // MARK: - Date parsing

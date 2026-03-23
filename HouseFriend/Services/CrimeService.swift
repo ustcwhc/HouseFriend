@@ -132,20 +132,28 @@ class CrimeService: ObservableObject {
                 defer { group.leave() }
                 guard let self = self else { return }
 
-                guard let data = data, error == nil,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-                      !json.isEmpty else {
-                    AppLogger.network.warning("Crime: \(endpoint.name) fetch failed or empty")
+                guard let data = data, error == nil else {
+                    AppLogger.network.warning("Crime: \(endpoint.name) network error")
                     return
                 }
 
-                // Field validation (CRIME-06)
+                // Handle non-array responses (error objects from SODA)
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                    AppLogger.network.warning("Crime: \(endpoint.name) returned non-array response")
+                    return
+                }
+
+                // Empty results are normal (viewport outside city bounds)
+                guard !json.isEmpty else {
+                    AppLogger.network.info("Crime: \(endpoint.name) returned 0 results for this area")
+                    return
+                }
+
+                // Field validation (CRIME-06) — only flag true schema changes
                 let missing = Self.validateFields(json, required: endpoint.fieldMapping.requiredFields)
                 if !missing.isEmpty {
                     AppLogger.network.error("Crime: \(endpoint.name) schema changed — missing \(missing.joined(separator: ", "))")
-                    DispatchQueue.main.async {
-                        self.errorMessage = "Crime data schema changed: missing \(missing.joined(separator: ", "))"
-                    }
+                    // Don't set errorMessage for schema issues — keep existing data visible
                     return
                 }
 
@@ -166,6 +174,15 @@ class CrimeService: ObservableObject {
 
         group.notify(queue: .global(qos: .userInitiated)) { [weak self] in
             guard let self = self else { return }
+
+            // If no new incidents, keep existing data visible (don't blank the heatmap)
+            guard !allIncidents.isEmpty else {
+                AppLogger.network.info("Crime: no incidents returned for this viewport — keeping existing data")
+                DispatchQueue.main.async { self.isLoading = false }
+                self.lastFetchCenter = (lat: lat, lon: lon)
+                self.lastFetchSpan = span
+                return
+            }
 
             let grid = Self.buildGrid(from: allIncidents, lat: lat, lon: lon)
             let spots = CrimeTileOverlay.buildHotspots(from: allIncidents)

@@ -12,11 +12,10 @@ struct FieldMapping {
     /// Fields actually present in the JSON response (may differ from geoColumn used in $where)
     let parseFields: [String]
 
-    /// All fields required for successful parsing — uses parseFields, not geoColumn,
-    /// because some APIs (SF) expose lat/lon as separate columns even though the
-    /// $where filter uses the geo column name.
+    /// All fields required for successful parsing — uses parseFields only.
+    /// parseFields already includes the fields needed for parsing (coordinates + category + datetime).
     var requiredFields: [String] {
-        parseFields + [category, datetime]
+        Array(Set(parseFields))  // Deduplicate
     }
 }
 

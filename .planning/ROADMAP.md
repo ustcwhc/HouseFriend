@@ -51,6 +51,16 @@ Plans:
 - [x] 02-01-PLAN.md — CityEndpoint + DensityGrid models, CrimeService multi-city fetch with field validation
 - [x] 02-02-PLAN.md — CrimeTileOverlay density grid rendering, cluster markers, ContentView wiring
 
+### Phase 02.1: Mapbox Migration (INSERTED)
+
+**Goal:** Replace Apple MapKit (MKMapView) with Mapbox SDK for all 10 map layers, overlays, annotations, and gesture handling. Enables dark map tiles, custom styling, and OpenStreetMap base map.
+**Requirements**: TBD — new requirements to be defined during planning
+**Depends on:** Phase 2
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 02.1 to break down)
+
 ### Phase 3: School Data
 **Goal**: School pins appear on the map with real CDE rating data, color-coded by level, and neighborhood report school scoring uses real grades
 **Depends on**: Phase 1

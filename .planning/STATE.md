@@ -53,6 +53,10 @@ Plan: 2 of 2
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 02.1 inserted after Phase 2: Mapbox Migration — Replace Apple MapKit with Mapbox SDK for all 10 map layers, overlays, annotations, and gesture handling (URGENT)
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.

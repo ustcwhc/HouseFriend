@@ -32,32 +32,6 @@ class CrimeTileOverlay: MKTileOverlay {
 
     // MARK: - Gaussian fallback hotspots (all Bay Area)
 
-    /// Original 21 hotspots + 11 safe zones covering the entire Bay Area.
-    /// Used for areas without real API data (San Jose, Fremont, etc.)
-    /// Fallback hotspots with reduced radii (0.5-0.8) to match the fine-grained
-    /// look of real data. Original radii (2.0-3.0) created city-wide blobs.
-    private static let fallbackHotspots: [(Double, Double, Double, Double)] = [
-        (37.812, -122.285, 0.80, 0.7), (37.928, -122.362, 0.75, 0.6),
-        (37.782, -122.415, 0.85, 0.6), (37.770, -122.220, 0.70, 0.7),
-        (38.105, -122.255, 0.65, 0.6), (37.343, -121.875, 0.70, 0.8),
-        (37.727, -122.390, 0.60, 0.6), (37.998, -121.808, 0.60, 0.6),
-        (37.670, -122.082, 0.55, 0.6), (37.962, -122.343, 0.55, 0.5),
-        (37.338, -121.888, 0.55, 0.7), (38.021, -121.878, 0.50, 0.5),
-        (37.748, -122.198, 0.50, 0.6), (37.758, -122.415, 0.50, 0.5),
-        (37.538, -121.975, 0.40, 0.7), (37.985, -122.058, 0.38, 0.5),
-        (37.976, -122.518, 0.35, 0.5), (37.270, -121.868, 0.35, 0.7),
-        (37.630, -121.888, 0.35, 0.6), (37.432, -121.902, 0.32, 0.6),
-        (37.698, -122.469, 0.30, 0.5),
-    ]
-    private static let fallbackSafeZones: [(Double, Double, Double, Double)] = [
-        (37.322, -122.040, 0.40, 1.5), (37.265, -122.030, 0.45, 1.2),
-        (37.440, -122.165, 0.50, 1.5), (37.378, -122.100, 0.45, 1.2),
-        (37.863, -122.248, 0.40, 1.0), (37.882, -122.165, 0.45, 1.5),
-        (37.822, -121.978, 0.45, 1.5), (37.662, -121.878, 0.45, 1.2),
-        (37.895, -122.512, 0.45, 1.8), (37.568, -122.320, 0.35, 1.5),
-        (37.928, -122.108, 0.38, 1.5),
-    ]
-
     override init(urlTemplate: String? = nil) {
         super.init(urlTemplate: nil)
         self.tileSize = CGSize(width: 256, height: 256)
@@ -159,22 +133,10 @@ class CrimeTileOverlay: MKTileOverlay {
 
     // MARK: - Gaussian crime intensity (real hotspots + fallback)
 
-    /// Computes crime intensity combining real hotspots (where available) with
-    /// Gaussian fallback for the rest of the Bay Area.
+    /// Computes crime intensity from real hotspots only. No fake data.
+    /// Cities without real API data show no heatmap.
     func crimeValue(lat: Double, lon: Double) -> Double {
-        // Check if point is in an API-covered city
-        let isCovered = CityEndpoint.endpoints.contains { ep in
-            let bb = ep.boundingBox
-            return lat >= bb.swLat && lat <= bb.neLat && lon >= bb.swLon && lon <= bb.neLon
-        }
-
-        if isCovered {
-            // Use real hotspots from API data
-            return realHotspotValue(lat: lat, lon: lon)
-        } else {
-            // Use Gaussian fallback for uncovered areas
-            return fallbackValue(lat: lat, lon: lon)
-        }
+        return realHotspotValue(lat: lat, lon: lon)
     }
 
     /// Intensity from real incident hotspots
@@ -198,22 +160,6 @@ class CrimeTileOverlay: MKTileOverlay {
         return compressed
     }
 
-    /// Intensity from fallback Gaussian model (all Bay Area)
-    private func fallbackValue(lat: Double, lon: Double) -> Double {
-        var v = 0.15
-        for h in Self.fallbackHotspots {
-            let d2 = pow((lat - h.0) * mpLat, 2) + pow((lon - h.1) * mpLon, 2)
-            v += h.2 * exp(-d2 / (h.3 * h.3))
-        }
-        for s in Self.fallbackSafeZones {
-            let d2 = pow((lat - s.0) * mpLat, 2) + pow((lon - s.1) * mpLon, 2)
-            v -= s.2 * exp(-d2 / (s.3 * s.3))
-        }
-        // Shift down so low-crime areas are more transparent
-        // More aggressive shift so only actual hotspots glow, not entire cities
-        let shifted = max(0.0, v - 0.30)
-        return min(1.0, shifted * 1.5)
-    }
 
     // MARK: - Gas/glow color gradient (for dark map background)
 

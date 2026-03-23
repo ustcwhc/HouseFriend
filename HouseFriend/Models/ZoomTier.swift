@@ -34,6 +34,17 @@ enum ZoomTier: Int, Comparable, CaseIterable {
         self.init(span: region.span.latitudeDelta)
     }
 
+    /// Determine zoom tier from Mapbox camera zoom level (0-22 scale).
+    init(zoom: Double) {
+        switch zoom {
+        case _ where zoom >= 14: self = .neighborhood
+        case _ where zoom >= 11: self = .city
+        case _ where zoom >= 8:  self = .county
+        case _ where zoom >= 5:  self = .state
+        default:                 self = .satellite
+        }
+    }
+
     static func < (lhs: ZoomTier, rhs: ZoomTier) -> Bool {
         lhs.rawValue < rhs.rawValue
     }

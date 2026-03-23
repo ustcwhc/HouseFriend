@@ -2,9 +2,8 @@ import MapKit
 import UIKit
 
 /// MKTileOverlay that renders crime heatmap tiles using Gaussian smoothing
-/// over real incident coordinates. Each incident acts as a heat source that
-/// bleeds into surrounding area, creating smooth organic heatmap contours
-/// that follow where crimes naturally cluster (along streets, downtown, etc).
+/// over real incident coordinates + Gaussian fallback for uncovered areas.
+/// Gas/glow effect on dark map — red-to-transparent gradient like SafeMap.io.
 class CrimeTileOverlay: MKTileOverlay {
 
     // MARK: - Thread-safe hotspot data
@@ -13,7 +12,7 @@ class CrimeTileOverlay: MKTileOverlay {
     struct Hotspot {
         let lat: Double
         let lon: Double
-        let weight: Double  // 0.0-1.0, based on incident count at this cluster
+        let weight: Double  // 0.0-1.0
     }
 
     private let hotspotsLock = NSLock()
@@ -24,12 +23,37 @@ class CrimeTileOverlay: MKTileOverlay {
     }
 
     /// Gaussian radius in miles² — controls how far each hotspot bleeds
-    /// Smaller = more granular detail, larger = smoother blending
-    private let gaussianRadius: Double = 0.3
+    private let gaussianRadius: Double = 0.4
 
     // Degrees-to-miles rough conversion (Bay Area latitude)
     private let mpLat = 69.0
     private let mpLon = 53.0
+
+    // MARK: - Gaussian fallback hotspots (all Bay Area)
+
+    /// Original 21 hotspots + 11 safe zones covering the entire Bay Area.
+    /// Used for areas without real API data (San Jose, Fremont, etc.)
+    private static let fallbackHotspots: [(Double, Double, Double, Double)] = [
+        (37.812, -122.285, 1.00, 2.5), (37.928, -122.362, 0.95, 2.0),
+        (37.782, -122.415, 0.90, 1.8), (37.770, -122.220, 0.88, 2.5),
+        (38.105, -122.255, 0.82, 2.0), (37.343, -121.875, 0.82, 3.0),
+        (37.727, -122.390, 0.80, 2.0), (37.998, -121.808, 0.78, 2.0),
+        (37.670, -122.082, 0.72, 2.0), (37.962, -122.343, 0.70, 1.8),
+        (37.338, -121.888, 0.68, 2.5), (38.021, -121.878, 0.65, 1.8),
+        (37.748, -122.198, 0.62, 2.0), (37.758, -122.415, 0.60, 1.8),
+        (37.538, -121.975, 0.50, 2.5), (37.985, -122.058, 0.48, 2.0),
+        (37.976, -122.518, 0.45, 1.8), (37.270, -121.868, 0.45, 2.5),
+        (37.630, -121.888, 0.45, 2.0), (37.432, -121.902, 0.42, 2.0),
+        (37.698, -122.469, 0.38, 1.8),
+    ]
+    private static let fallbackSafeZones: [(Double, Double, Double, Double)] = [
+        (37.322, -122.040, 0.50, 4.0), (37.265, -122.030, 0.55, 3.5),
+        (37.440, -122.165, 0.60, 4.5), (37.378, -122.100, 0.55, 3.5),
+        (37.863, -122.248, 0.55, 2.5), (37.882, -122.165, 0.60, 4.0),
+        (37.822, -121.978, 0.58, 4.0), (37.662, -121.878, 0.58, 3.5),
+        (37.895, -122.512, 0.60, 5.0), (37.568, -122.320, 0.45, 4.0),
+        (37.928, -122.108, 0.48, 4.0),
+    ]
 
     override init(urlTemplate: String? = nil) {
         super.init(urlTemplate: nil)
@@ -51,11 +75,9 @@ class CrimeTileOverlay: MKTileOverlay {
     // MARK: - Build hotspots from real incidents
 
     /// Clusters real incidents into Gaussian hotspots for smooth rendering.
-    /// Groups nearby incidents (within ~0.005°) and uses the cluster count as weight.
     static func buildHotspots(from incidents: [CrimeIncident]) -> [Hotspot] {
         guard !incidents.isEmpty else { return [] }
 
-        // Cluster incidents into grid cells (0.005° ≈ 500m)
         let cellSize = 0.005
         var clusters: [String: (lat: Double, lon: Double, count: Int)] = [:]
 
@@ -69,7 +91,6 @@ class CrimeTileOverlay: MKTileOverlay {
             let key = "\(row)_\(col)"
 
             if var existing = clusters[key] {
-                // Running average of coordinates + count
                 let n = Double(existing.count)
                 existing.lat = (existing.lat * n + lat) / (n + 1)
                 existing.lon = (existing.lon * n + lon) / (n + 1)
@@ -80,27 +101,18 @@ class CrimeTileOverlay: MKTileOverlay {
             }
         }
 
-        // Normalize weights: max cluster count → 1.0
         let maxCount = clusters.values.map { $0.count }.max() ?? 1
-
         return clusters.values.map { cluster in
-            // Log scale weight: prevents a few high-count clusters from dominating
-            // log(1+count)/log(1+max) gives 0.0-1.0 range with diminishing returns
             let logWeight = log(1.0 + Double(cluster.count)) / log(1.0 + Double(maxCount))
-            return Hotspot(
-                lat: cluster.lat,
-                lon: cluster.lon,
-                weight: logWeight
-            )
+            return Hotspot(lat: cluster.lat, lon: cluster.lon, weight: logWeight)
         }
     }
 
-    // MARK: - Tile generation
+    // MARK: - Tile generation (gas/glow effect)
 
     func renderTile(z: Int, x: Int, y: Int) -> Data? {
         let (minLat, maxLat, minLon, maxLon) = Self.tileBounds(z: z, x: x, y: y)
 
-        // Skip tiles clearly outside Bay Area
         guard maxLat > 36.8 && minLat < 38.9 &&
               maxLon > -123.5 && minLon < -121.0 else { return nil }
 
@@ -113,9 +125,11 @@ class CrimeTileOverlay: MKTileOverlay {
                     let lat = maxLat - Double(row) / Double(size) * (maxLat - minLat)
                     let lon = minLon + Double(col) / Double(size) * (maxLon - minLon)
                     let v = crimeValue(lat: lat, lon: lon)
-                    guard v > 0.0 else { continue }
-                    let (r, g, b) = Self.crimeRGB(v)
-                    let alpha = min(0.72, max(0.38, v * 0.82))
+                    guard v > 0.02 else { continue }
+
+                    // Gas/glow color: red-orange-yellow with soft alpha for glow effect
+                    let (r, g, b) = Self.glowRGB(v)
+                    let alpha = min(0.85, v * 0.9)  // Softer alpha for gas-like transparency
                     cg.setFillColor(red:   CGFloat(r) / 255,
                                     green: CGFloat(g) / 255,
                                     blue:  CGFloat(b) / 255,
@@ -139,11 +153,28 @@ class CrimeTileOverlay: MKTileOverlay {
         return (latMinRad * 180 / .pi, latMaxRad * 180 / .pi, lonMin, lonMax)
     }
 
-    // MARK: - Gaussian crime intensity
+    // MARK: - Gaussian crime intensity (real hotspots + fallback)
 
-    /// Computes crime intensity at a coordinate using Gaussian smoothing over real hotspots.
-    /// Each hotspot contributes exp(-dist²/radius²) * weight. Returns 0.0 when no hotspots loaded.
+    /// Computes crime intensity combining real hotspots (where available) with
+    /// Gaussian fallback for the rest of the Bay Area.
     func crimeValue(lat: Double, lon: Double) -> Double {
+        // Check if point is in an API-covered city
+        let isCovered = CityEndpoint.endpoints.contains { ep in
+            let bb = ep.boundingBox
+            return lat >= bb.swLat && lat <= bb.neLat && lon >= bb.swLon && lon <= bb.neLon
+        }
+
+        if isCovered {
+            // Use real hotspots from API data
+            return realHotspotValue(lat: lat, lon: lon)
+        } else {
+            // Use Gaussian fallback for uncovered areas
+            return fallbackValue(lat: lat, lon: lon)
+        }
+    }
+
+    /// Intensity from real incident hotspots
+    private func realHotspotValue(lat: Double, lon: Double) -> Double {
         let spots = hotspots
         guard !spots.isEmpty else { return 0.0 }
 
@@ -154,24 +185,41 @@ class CrimeTileOverlay: MKTileOverlay {
             let dLat = (lat - h.lat) * mpLat
             let dLon = (lon - h.lon) * mpLon
             let dist2 = dLat * dLat + dLon * dLon
-            // Skip hotspots too far away (> 4x radius = negligible contribution)
             guard dist2 < r2 * 16 else { continue }
             value += h.weight * exp(-dist2 / r2)
         }
 
-        // Apply baseline + scale to get visible range without saturation
-        // Raw value can exceed 1.0 in dense areas; compress with diminishing returns
-        let compressed = 1.0 - exp(-value * 2.0)  // asymptotic approach to 1.0
-        guard compressed > 0.05 else { return 0.0 }  // cut off very faint areas
+        let compressed = 1.0 - exp(-value * 2.5)
+        guard compressed > 0.03 else { return 0.0 }
         return compressed
     }
 
-    static func crimeRGB(_ v: Double) -> (UInt8, UInt8, UInt8) {
-        if v >= 0.72 { return (191,  13,  13) }
-        if v >= 0.55 { return (235,  64,  20) }
-        if v >= 0.40 { return (250, 133,  38) }
-        if v >= 0.28 { return (254, 184,  89) }
-        if v >= 0.18 { return (255, 219, 153) }
-        return               (255, 238, 200)
+    /// Intensity from fallback Gaussian model (all Bay Area)
+    private func fallbackValue(lat: Double, lon: Double) -> Double {
+        var v = 0.15
+        for h in Self.fallbackHotspots {
+            let d2 = pow((lat - h.0) * mpLat, 2) + pow((lon - h.1) * mpLon, 2)
+            v += h.2 * exp(-d2 / (h.3 * h.3))
+        }
+        for s in Self.fallbackSafeZones {
+            let d2 = pow((lat - s.0) * mpLat, 2) + pow((lon - s.1) * mpLon, 2)
+            v -= s.2 * exp(-d2 / (s.3 * s.3))
+        }
+        // Shift down so low-crime areas are more transparent
+        let shifted = max(0.0, v - 0.20)
+        return min(1.0, shifted)
+    }
+
+    // MARK: - Gas/glow color gradient (for dark map background)
+
+    /// Warm glow colors: transparent → yellow → orange → red → bright red
+    /// Designed to look like a gas/thermal leak on a dark map
+    static func glowRGB(_ v: Double) -> (UInt8, UInt8, UInt8) {
+        if v >= 0.75 { return (255,  30,  30) }   // Bright red — danger zones
+        if v >= 0.55 { return (255,  60,  15) }   // Red-orange
+        if v >= 0.40 { return (255, 100,  10) }   // Orange
+        if v >= 0.25 { return (255, 150,  30) }   // Warm orange
+        if v >= 0.12 { return (255, 190,  50) }   // Yellow-orange
+        return               (255, 220, 100)       // Warm yellow — faint glow
     }
 }

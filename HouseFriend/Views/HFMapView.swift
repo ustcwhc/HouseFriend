@@ -141,8 +141,17 @@ struct HFMapView: UIViewRepresentable {
 
             // Crime: check if density grid changed and needs tile refresh
             if cat == .crime && cat == activeCategory {
-                // Refresh visible tracts on pan/zoom or when densities change
-                addVisibleCrimeTracts(map)
+                // Refresh tile overlay when hotspots change
+                if let existing = crimeTileOverlay {
+                    let newSpots = parent.crimeHotspots
+                    if existing.hotspots.count != newSpots.count {
+                        map.removeOverlay(existing)
+                        let overlay = CrimeTileOverlay()
+                        overlay.hotspots = newSpots
+                        crimeTileOverlay = overlay
+                        map.addOverlay(overlay, level: .aboveRoads)
+                    }
+                }
                 return
             }
 
@@ -156,13 +165,19 @@ struct HFMapView: UIViewRepresentable {
             crimePolygonRenderers = [:]
             lastCrimeDensityCount = 0
             zipRenderers = [:]
+            // Reset map style from dark mode when leaving crime layer
+            map.overrideUserInterfaceStyle = .unspecified
             activeCategory = cat
 
             switch cat {
             case .crime:
-                // Polygon-based crime heatmap — only add tracts visible in current viewport
-                // to avoid Metal buffer overflow (1,772 tracts is too many for MapKit at once)
-                addVisibleCrimeTracts(map)
+                // Dark map for crime layer — makes gas/glow heatmap visible
+                map.overrideUserInterfaceStyle = .dark
+                // Tile overlay with Gaussian gas/glow effect
+                let overlay = CrimeTileOverlay()
+                overlay.hotspots = parent.crimeHotspots
+                crimeTileOverlay = overlay
+                map.addOverlay(overlay, level: .aboveRoads)
 
             case .fireHazard:
                 for zone in parent.fireZones {

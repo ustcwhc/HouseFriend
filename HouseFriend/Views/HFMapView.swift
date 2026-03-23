@@ -275,12 +275,121 @@ extension HFMapView {
 
     @MapboxMaps.MapContentBuilder
     var zipLayerContent: some MapboxMaps.MapContent {
-        if false { Puck2D() }
+        if selectedCategory == .population, !zipRegions.isEmpty {
+            GeoJSONSource(id: "zip-polygons")
+                .data(.featureCollection(zipPolygonFC))
+
+            FillLayer(id: "zip-fill", source: "zip-polygons")
+                .fillColor(Exp(.match) {
+                    Exp(.get) { "isHighlighted" }
+                    "true";  "rgba(255,45,85,0.28)"
+                    "rgba(255,235,77,0.06)"
+                })
+                .fillOpacity(1.0)
+
+            LineLayer(id: "zip-stroke", source: "zip-polygons")
+                .lineColor(Exp(.match) {
+                    Exp(.get) { "isHighlighted" }
+                    "true";  "rgba(255,45,85,0.85)"
+                    "rgba(212,175,55,0.70)"
+                })
+                .lineWidth(Exp(.match) {
+                    Exp(.get) { "isHighlighted" }
+                    "true";  2.5
+                    1.5
+                })
+
+            GeoJSONSource(id: "zip-labels")
+                .data(.featureCollection(zipLabelFC))
+
+            SymbolLayer(id: "zip-labels", source: "zip-labels")
+                .textField(Exp(.get) { "zipId" })
+                .textSize(10.0)
+                .textColor(StyleColor(UIColor.darkText))
+                .textHaloColor(StyleColor(UIColor.white.withAlphaComponent(0.75)))
+                .textHaloWidth(1.0)
+                .textAllowOverlap(false)
+        }
     }
 
     @MapboxMaps.MapContentBuilder
     var noiseLayerContent: some MapboxMaps.MapContent {
-        if false { Puck2D() }
+        if selectedCategory == .noise, !noiseRoads.isEmpty {
+            GeoJSONSource(id: "noise-roads")
+                .data(.featureCollection(noiseRoadFC))
+
+            // Layer 1: Wide outer haze
+            LineLayer(id: "noise-haze-outer", source: "noise-roads")
+                .lineWidth(Exp(.product) { Exp(.get) { "lineWidth" }; 12.0 })
+                .lineColor(StyleColor(UIColor(white: 0.08, alpha: 1.0)))
+                .lineOpacity(Exp(.product) { 0.025; Exp(.get) { "intensity" } })
+                .lineBlur(8.0)
+                .lineCap(.round)
+                .lineJoin(.round)
+
+            // Layer 2: Mid haze
+            LineLayer(id: "noise-haze-mid", source: "noise-roads")
+                .lineWidth(Exp(.product) { Exp(.get) { "lineWidth" }; 6.0 })
+                .lineColor(StyleColor(UIColor(white: 0.10, alpha: 1.0)))
+                .lineOpacity(Exp(.product) { 0.06; Exp(.get) { "intensity" } })
+                .lineBlur(4.0)
+                .lineCap(.round)
+                .lineJoin(.round)
+
+            // Layer 3: Inner smoke
+            LineLayer(id: "noise-smoke-inner", source: "noise-roads")
+                .lineWidth(Exp(.product) { Exp(.get) { "lineWidth" }; 3.0 })
+                .lineColor(StyleColor(UIColor(white: 0.12, alpha: 1.0)))
+                .lineOpacity(Exp(.product) { 0.12; Exp(.get) { "intensity" } })
+                .lineBlur(2.0)
+                .lineCap(.round)
+                .lineJoin(.round)
+
+            // Layer 4: Core colored line (non-railway roads)
+            makeNoiseCoreLayer()
+
+            // Layer 5: Railway dashed overlay
+            makeNoiseRailwayLayer()
+        }
+    }
+
+    /// Core noise line with filter. Helper because `filter` isn't chainable.
+    private func makeNoiseCoreLayer() -> LineLayer {
+        var layer = LineLayer(id: "noise-core", source: "noise-roads")
+        layer.lineWidth = .expression(Exp(.get) { "lineWidth" })
+        layer.lineColor = .expression(noiseDbColorExp)
+        layer.lineOpacity = .constant(0.75)
+        layer.lineCap = .constant(.round)
+        layer.lineJoin = .constant(.round)
+        layer.filter = Exp(.eq) { Exp(.get) { "isRailway" }; "false" }
+        return layer
+    }
+
+    /// Railway segments with dashed pattern.
+    private func makeNoiseRailwayLayer() -> LineLayer {
+        var layer = LineLayer(id: "noise-railway", source: "noise-roads")
+        layer.lineWidth = .expression(Exp(.get) { "lineWidth" })
+        layer.lineColor = .expression(noiseDbColorExp)
+        layer.lineOpacity = .constant(0.75)
+        layer.lineCap = .constant(.round)
+        layer.lineJoin = .constant(.round)
+        layer.lineDasharray = .constant([3.0, 2.0])
+        layer.filter = Exp(.eq) { Exp(.get) { "isRailway" }; "true" }
+        return layer
+    }
+
+    /// Step expression: dB level -> color matching NoiseService.color(for:).
+    private var noiseDbColorExp: Exp {
+        Exp(.step) {
+            Exp(.get) { "dbLevel" }
+            "rgba(102,217,102,1)"       // <50: green
+            50; "rgba(255,235,26,1)"    // 50-54: yellow
+            55; "rgba(255,184,0,1)"     // 55-59: orange
+            60; "rgba(255,115,0,1)"     // 60-64: dark orange
+            65; "rgba(235,26,77,1)"     // 65-69: red-pink
+            70; "rgba(153,0,184,1)"     // 70-77: purple
+            78; "rgba(71,0,128,1)"      // 78+: dark purple
+        }
     }
 }
 
@@ -308,6 +417,39 @@ extension HFMapView {
         FeatureCollection(features: odorZones.map { zone in
             var f = Feature(geometry: .polygon(Polygon([zone.coordinates])))
             f.properties = ["value": .number(zone.value)]
+            return f
+        })
+    }
+
+    private var zipPolygonFC: FeatureCollection {
+        FeatureCollection(features: zipRegions.map { region in
+            var f = Feature(geometry: .polygon(Polygon([region.polygon])))
+            f.properties = [
+                "zipId": .string(region.id),
+                "isHighlighted": .string(region.id == highlightedZIPId ? "true" : "false")
+            ]
+            return f
+        })
+    }
+
+    private var zipLabelFC: FeatureCollection {
+        FeatureCollection(features: zipRegions.map { region in
+            var f = Feature(geometry: .point(Point(region.center)))
+            f.properties = ["zipId": .string(region.id)]
+            return f
+        })
+    }
+
+    private var noiseRoadFC: FeatureCollection {
+        FeatureCollection(features: noiseRoads.map { road in
+            var f = Feature(geometry: .lineString(LineString(road.coordinates)))
+            let intensity = min(max(Double(road.dbLevel) - 40.0, 0), 38.0) / 38.0
+            f.properties = [
+                "dbLevel": .number(Double(road.dbLevel)),
+                "lineWidth": .number(road.lineWidth),
+                "isRailway": .string(road.isRailway ? "true" : "false"),
+                "intensity": .number(intensity)
+            ]
             return f
         })
     }

@@ -69,12 +69,13 @@ class CrimeService: ObservableObject {
         // Skip if already loading
         guard !isLoading else { return }
 
-        // Skip if viewport hasn't moved much (debounce small pans)
+        // Only refetch when center has moved significantly (>50% of last fetch radius)
+        // Zoom changes alone don't trigger refetch — keeps heatmap stable
         if let last = lastFetchCenter {
             let movedLat = abs(lat - last.lat)
             let movedLon = abs(lon - last.lon)
-            let threshold = max(0.01, span * 0.3)  // Must move 30% of viewport to refetch
-            if movedLat < threshold && movedLon < threshold && abs(span - lastFetchSpan) < 0.1 {
+            let threshold = 0.03  // ~3km — must move substantially to refetch
+            if movedLat < threshold && movedLon < threshold {
                 return
             }
         }
@@ -245,10 +246,6 @@ class CrimeService: ObservableObject {
         // Radius covers the viewport (span in degrees → meters, ~111km per degree)
         let radiusMeters = Int(max(span, 0.02) * 111000)
 
-        // Random offset for sampling — fetches a random slice of incidents
-        // so the heatmap represents a random sample, not just the most recent
-        let randomOffset = Int.random(in: 0...2000)
-
         var components = URLComponents(string: endpoint.baseURL)
         var queryItems: [URLQueryItem] = [
             URLQueryItem(
@@ -256,7 +253,7 @@ class CrimeService: ObservableObject {
                 value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),\(radiusMeters)) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
             ),
             URLQueryItem(name: "$limit", value: "200"),
-            URLQueryItem(name: "$offset", value: "\(randomOffset)")
+            URLQueryItem(name: "$order", value: "\(endpoint.fieldMapping.datetime) DESC")
         ]
         if !appToken.isEmpty {
             queryItems.append(URLQueryItem(name: "$$app_token", value: appToken))

@@ -14,6 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: API Caching Foundation** - Shared ResponseCache (memory + disk, per-layer TTLs) that all API services use
 - [ ] **Phase 2: Real Crime Data** - CrimeService wired to SF Open Data and Oakland CrimeWatch SODA APIs
+- [ ] **Phase 02.1: Mapbox Migration (INSERTED)** - Replace Apple MapKit with Mapbox SDK for all 10 map layers
 - [ ] **Phase 3: School Data** - SchoolService wired to CDE Dashboard data with school pins on map
 - [ ] **Phase 4: Dark Mode** - Custom overlay renderers updated for dynamic color and system dark mode toggle
 - [ ] **Phase 5: Loading & Layer Polish** - Spinners on all layers, descriptive report text, data attribution, expanded data sets
@@ -54,12 +55,24 @@ Plans:
 ### Phase 02.1: Mapbox Migration (INSERTED)
 
 **Goal:** Replace Apple MapKit (MKMapView) with Mapbox SDK for all 10 map layers, overlays, annotations, and gesture handling. Enables dark map tiles, custom styling, and OpenStreetMap base map.
-**Requirements**: TBD — new requirements to be defined during planning
+**Requirements**: MAP-01, MAP-02, MAP-03, MAP-04, MAP-05, MAP-06, MAP-07, MAP-08, MAP-09, MAP-10
 **Depends on:** Phase 2
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. App builds with Mapbox Maps SDK v11 SPM dependency
+  2. All 10 data layers render correctly through Mapbox GeoJSON sources and layers
+  3. Tap and long-press gestures fire callbacks to ContentView
+  4. Crime heatmap renders as GPU-accelerated HeatmapLayer glow on dark tiles
+  5. Noise roads render with smoke/blur effect via stacked LineLayer
+  6. 445 ZIP polygons render without lag (Mapbox vector tile engine handles viewport culling)
+  7. All annotation types (schools, superfund, earthquake, housing) are tappable
+  8. CrimeTileOverlay.swift and NoiseSmokeRenderer.swift are deleted
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 02.1 to break down)
+- [ ] 02.1-01-PLAN.md — Mapbox SPM dependency, token loading, ZoomTier migration, HFMapView rewrite, ContentView Viewport wiring
+- [ ] 02.1-02-PLAN.md — Polygon/polyline layers (fire, electric, odor, ZIP, noise smoke)
+- [ ] 02.1-03-PLAN.md — Crime HeatmapLayer and all annotation types (schools, superfund, earthquake, housing, clusters, pin)
+- [ ] 02.1-04-PLAN.md — Cleanup (delete old renderers, move Hotspot type) and visual verification checkpoint
 
 ### Phase 3: School Data
 **Goal**: School pins appear on the map with real CDE rating data, color-coded by level, and neighborhood report school scoring uses real grades
@@ -137,12 +150,13 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. API Caching Foundation | 0/2 | Planning complete | - |
-| 2. Real Crime Data | 0/2 | Planning complete | - |
+| 1. API Caching Foundation | 2/2 | Complete | - |
+| 2. Real Crime Data | 2/2 | Complete | - |
+| 02.1. Mapbox Migration | 0/4 | Planning complete | - |
 | 3. School Data | 0/TBD | Not started | - |
 | 4. Dark Mode | 0/TBD | Not started | - |
 | 5. Loading & Layer Polish | 0/TBD | Not started | - |

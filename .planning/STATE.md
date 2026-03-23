@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02.1-03-PLAN.md
-last_updated: "2026-03-23T06:13:59.812Z"
+stopped_at: Completed 02.1-02-PLAN.md
+last_updated: "2026-03-23T06:14:21.558Z"
 progress:
   total_phases: 9
   completed_phases: 2
@@ -52,6 +52,7 @@ Plan: 4 of 4
 | Phase 02 P02 | 4min | 2 tasks | 3 files |
 | Phase 02.1 P01 | 4min | 2 tasks | 4 files |
 | Phase 02.1 P03 | 11min | 2 tasks | 1 files |
+| Phase 02.1 P02 | 12min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 02.1]: Fully qualify MapboxMaps.Map/MapReader/MapStyle to avoid SwiftUI Map ambiguity when MapKit is co-imported
 - [Phase 02.1]: spanForZoom/zoomForSpan converters bridge Mapbox zoom levels with existing MKCoordinateSpan-based services
 - [Phase 02.1]: Use @_spi(Experimental) import MapboxMaps for declarative GeoJSONSource; rgba() CSS strings for expression colors; fully qualify MapboxMaps.MapContent to resolve ambiguity
+- [Phase 02.1]: rgba string literals for expression colors (StyleColor init returns optional)
+- [Phase 02.1]: Helper functions for layers needing filter property (not chainable in MapContent builder)
 
 ### Pending Todos
 
@@ -91,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T06:13:45.487Z
-Stopped at: Completed 02.1-03-PLAN.md
+Last session: 2026-03-23T06:14:21.557Z
+Stopped at: Completed 02.1-02-PLAN.md
 Resume file: None

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-02-PLAN.md (awaiting human verification checkpoint)
-last_updated: "2026-03-22T19:32:45.086Z"
+stopped_at: Completed 02.1-01-PLAN.md
+last_updated: "2026-03-23T05:58:54.087Z"
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 8
+  completed_plans: 5
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-22)
 
 **Core value:** Users can instantly visualize and score any Bay Area neighborhood across 10 safety/quality dimensions from a single map interface
-**Current focus:** Phase 02 — real-crime-data
+**Current focus:** Phase 02.1 — mapbox-migration
 
 ## Current Position
 
-Phase: 02 (real-crime-data) — EXECUTING
-Plan: 2 of 2
+Phase: 02.1 (mapbox-migration) — EXECUTING
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Plan: 2 of 2
 | Phase 01 P02 | 5min | 2 tasks | 5 files |
 | Phase 02 P01 | 4min | 2 tasks | 3 files |
 | Phase 02 P02 | 4min | 2 tasks | 3 files |
+| Phase 02.1 P01 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - [Phase 02]: Density-normalized scoring: peak cell count / 50 baseline, mapped to 20-100 range
 - [Phase 02]: NSLock for thread-safe CrimeTileOverlay.densityGrid access (background tile threads)
 - [Phase 02]: Overlay replacement (remove+add) for tile invalidation on grid change
+- [Phase 02.1]: Fully qualify MapboxMaps.Map/MapReader/MapStyle to avoid SwiftUI Map ambiguity when MapKit is co-imported
+- [Phase 02.1]: spanForZoom/zoomForSpan converters bridge Mapbox zoom levels with existing MKCoordinateSpan-based services
 
 ### Pending Todos
 
@@ -86,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-22T19:32:45.085Z
-Stopped at: Completed 02-02-PLAN.md (awaiting human verification checkpoint)
+Last session: 2026-03-23T05:58:54.085Z
+Stopped at: Completed 02.1-01-PLAN.md
 Resume file: None

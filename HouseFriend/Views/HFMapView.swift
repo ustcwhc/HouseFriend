@@ -3,9 +3,9 @@ import SwiftUI
 import MapKit   // CLLocationCoordinate2D, MKCoordinateRegion (used by service types)
 import Turf     // Feature, FeatureCollection, Point for GeoJSON sources
 
+// Disambiguate MapContent/MapContentBuilder (exists in both MapboxMaps and _MapKit_SwiftUI)
+
 // MARK: - HFMapView
-// Mapbox SwiftUI Map wrapper replacing the UIViewRepresentable MKMapView.
-// Layers/annotations are stub placeholders — Plans 02.1-02 and 02.1-03 add them.
 
 struct HFMapView: View {
 
@@ -15,7 +15,7 @@ struct HFMapView: View {
     let showCrimeDetails: Bool
     let pinnedLocation: CLLocationCoordinate2D?
 
-    // MARK: - Layer data (passed in from ContentView @StateObject services)
+    // MARK: - Layer data
     let noiseRoads: [NoiseRoad]
     let earthquakes: [EarthquakeEvent]
     let schools: [School]
@@ -32,7 +32,7 @@ struct HFMapView: View {
     let tractCrimeDensities: [String: Double]
     let censusTracts: [CensusTract]
 
-    // MARK: - Callbacks -> ContentView
+    // MARK: - Callbacks
     var onCameraChange: (CLLocationCoordinate2D, Double) -> Void = { _, _ in }
     var onSchoolTap: (School) -> Void = { _ in }
     var onSuperfundTap: (SuperfundSite) -> Void = { _ in }
@@ -42,85 +42,62 @@ struct HFMapView: View {
     var onNoiseFetchCancel: () -> Void = {}
     var onMapLongPress: (CLLocationCoordinate2D) -> Void = { _ in }
 
+    // MARK: - Local state
+    @State private var currentZoom: Double = 14.0
+
     // MARK: - Body
 
     var body: some View {
         MapboxMaps.MapReader { proxy in
             MapboxMaps.Map(viewport: $viewport) {
-                // User location puck
                 Puck2D(bearing: .heading)
-
-                // MARK: Polygon/polyline overlay layers
                 fireLayerContent
                 electricLayerContent
                 odorLayerContent
                 zipLayerContent
                 noiseLayerContent
-
-                // MARK: Crime HeatmapLayer + cluster markers (Plan 02.1-03)
                 crimeHeatmapContent
                 crimeClusterContent
+                annotationContent
             }
             .mapStyle(mapStyleForCategory)
-            .onMapTapGesture { context in
-                onMapTap(context.coordinate)
-            }
-            .onMapLongPressGesture { context in
-                onMapLongPress(context.coordinate)
-            }
+            .onMapTapGesture { context in onMapTap(context.coordinate) }
+            .onMapLongPressGesture { context in onMapLongPress(context.coordinate) }
             .onCameraChanged { context in
                 let center = context.cameraState.center
                 let zoom = context.cameraState.zoom
+                currentZoom = zoom
                 onCameraChange(center, zoom)
             }
         }
     }
 
-    // MARK: - Map Style
-
-    /// Day style for most layers; night preset for the crime heatmap (dark tiles
-    /// make the gas/glow effect visible).
     private var mapStyleForCategory: MapboxMaps.MapStyle {
-        if selectedCategory == .crime {
-            return .standard(lightPreset: .night)
-        }
-        return .standard(lightPreset: .day)
+        selectedCategory == .crime ? .standard(lightPreset: .night) : .standard(lightPreset: .day)
     }
 }
 
-// MARK: - Crime Heatmap Layer Content
+// MARK: - Crime Heatmap
 
 extension HFMapView {
 
-    /// GeoJSON source + HeatmapLayer for crime incidents — GPU-accelerated glow.
-    /// Replaces the CPU pixel-by-pixel CrimeTileOverlay with Mapbox's native heatmap.
     @MapboxMaps.MapContentBuilder
     var crimeHeatmapContent: some MapboxMaps.MapContent {
         if selectedCategory == .crime, !crimeHotspots.isEmpty {
-            // GeoJSON point source from crime hotspots
             GeoJSONSource(id: "crime-incidents")
-                .data(.featureCollection(crimeHotspotsFeatureCollection))
+                .data(.featureCollection(crimeHotspotsFC))
 
-            // GPU-accelerated heatmap layer with gas/glow color gradient
             HeatmapLayer(id: "crime-heat", source: "crime-incidents")
                 .heatmapWeight(Exp(.get) { "weight" })
                 .heatmapIntensity(Exp(.interpolate) {
-                    Exp(.linear)
-                    Exp(.zoom)
-                    0; 1
-                    9; 3
+                    Exp(.linear); Exp(.zoom); 0; 1; 9; 3
                 })
                 .heatmapRadius(Exp(.interpolate) {
-                    Exp(.linear)
-                    Exp(.zoom)
-                    0; 2
-                    9; 20
-                    14; 30
+                    Exp(.linear); Exp(.zoom); 0; 2; 9; 20; 14; 30
                 })
                 .heatmapColor(Exp(.interpolate) {
                     Exp(.linear)
                     Exp(.heatmapDensity)
-                    // Transparent → yellow → orange → red (gas/glow on dark tiles)
                     0;    "rgba(0,0,0,0)"
                     0.12; "rgba(255,220,100,0.1)"
                     0.25; "rgba(255,190,50,0.25)"
@@ -133,246 +110,219 @@ extension HFMapView {
         }
     }
 
-    /// Crime cluster markers — circles + count labels from DensityGrid.
-    /// Visible when showCrimeDetails is toggled on.
     @MapboxMaps.MapContentBuilder
     var crimeClusterContent: some MapboxMaps.MapContent {
         if selectedCategory == .crime, showCrimeDetails, let grid = densityGrid {
-            // GeoJSON source from density grid cells with count > 0
             GeoJSONSource(id: "crime-clusters")
-                .data(.featureCollection(densityGridFeatureCollection(grid)))
+                .data(.featureCollection(densityGridFC(grid)))
 
-            // White circles behind the count text
             CircleLayer(id: "crime-cluster-circles", source: "crime-clusters")
                 .circleRadius(Exp(.step) {
-                    Exp(.get) { "count" }
-                    14  // default radius
-                    5; 17
-                    20; 20
+                    Exp(.get) { "count" }; 14; 5; 17; 20; 20
                 })
-                .circleColor(.white)
+                .circleColor(StyleColor(.white))
                 .circleStrokeWidth(2.0)
                 .circleStrokeColor(Exp(.step) {
-                    Exp(.get) { "count" }
-                    "gray"
-                    5; "orange"
-                    10; "red"
+                    Exp(.get) { "count" }; "gray"; 5; "orange"; 10; "red"
                 })
 
-            // Count text labels on top of circles
             SymbolLayer(id: "crime-cluster-labels", source: "crime-clusters")
                 .textField(Exp(.toString) { Exp(.get) { "count" } })
                 .textSize(12.0)
                 .textColor(Exp(.step) {
-                    Exp(.get) { "count" }
-                    "gray"
-                    5; "orange"
-                    10; "red"
+                    Exp(.get) { "count" }; "gray"; 5; "orange"; 10; "red"
                 })
                 .textFont(["DIN Pro Bold"])
                 .textAllowOverlap(true)
         }
     }
+}
 
-    // MARK: - Fire Hazard Layer
+// MARK: - Annotations
 
-    /// Fire hazard zones as colored fill polygons, severity-driven coloring.
+extension HFMapView {
+
+    @MapboxMaps.MapContentBuilder
+    var annotationContent: some MapboxMaps.MapContent {
+        if selectedCategory == .schools {
+            let levels = ZoomTier(zoom: currentZoom).schoolLevelsToShow()
+            ForEvery(schools.filter { levels.contains($0.level) }, id: \.id) { school in
+                MapViewAnnotation(coordinate: school.coordinate) {
+                    Image(systemName: "graduationcap.fill")
+                        .foregroundStyle(schoolColor(school.level))
+                        .font(.title3)
+                        .onTapGesture { onSchoolTap(school) }
+                }
+            }
+        }
+
+        if selectedCategory == .superfund, ZoomTier(zoom: currentZoom).showsCityAnnotations {
+            ForEvery(superfundSites, id: \.id) { site in
+                MapViewAnnotation(coordinate: site.coordinate) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.title3)
+                        .onTapGesture { onSuperfundTap(site) }
+                }
+            }
+        }
+
+        if selectedCategory == .earthquake, ZoomTier(zoom: currentZoom).showsCityAnnotations {
+            ForEvery(earthquakes, id: \.id) { event in
+                MapViewAnnotation(coordinate: event.coordinate) {
+                    Text(String(format: "%.1f", event.magnitude))
+                        .font(.caption.bold())
+                        .foregroundStyle(earthquakeColor(event.magnitude))
+                        .padding(4)
+                        .background(Circle().fill(.white.opacity(0.85)))
+                }
+            }
+        }
+
+        if selectedCategory == .supportiveHome, ZoomTier(zoom: currentZoom).showsNeighborhoodAnnotations {
+            ForEvery(housingFacilities, id: \.id) { facility in
+                MapViewAnnotation(coordinate: facility.coordinate) {
+                    Image(systemName: "house.fill")
+                        .foregroundStyle(.teal)
+                        .font(.title3)
+                        .onTapGesture { onHousingTap(facility) }
+                }
+            }
+        }
+
+        if let pin = pinnedLocation {
+            MapViewAnnotation(coordinate: pin) {
+                Image(systemName: "mappin")
+                    .foregroundStyle(.red)
+                    .font(.title)
+            }
+        }
+    }
+
+    private func schoolColor(_ level: SchoolLevel) -> Color {
+        switch level {
+        case .elementary: return .green
+        case .middle:     return .blue
+        case .high:       return .purple
+        }
+    }
+
+    private func earthquakeColor(_ magnitude: Double) -> Color {
+        if magnitude >= 5.0 { return .red }
+        if magnitude >= 4.0 { return .orange }
+        return .yellow
+    }
+}
+
+// MARK: - Overlay Layers (Plan 02.1-02)
+
+extension HFMapView {
+
     @MapboxMaps.MapContentBuilder
     var fireLayerContent: some MapboxMaps.MapContent {
         if selectedCategory == .fireHazard, !fireZones.isEmpty {
             GeoJSONSource(id: "fire-zones")
-                .data(.featureCollection(fireZoneFeatureCollection))
+                .data(.featureCollection(fireZoneFC))
 
-            // Severity-colored fill: extreme=dark red, very high=orange-red, high=orange, default=yellow
             FillLayer(id: "fire-fill", source: "fire-zones")
                 .fillColor(Exp(.match) {
                     Exp(.get) { "severity" }
-                    "extreme";   "rgba(184,5,5,1)"
-                    "very high"; "rgba(230,51,13,1)"
-                    "high";      "rgba(242,128,26,1)"
-                    "rgba(242,217,26,1)"  // default: yellow
+                    "extreme";   "rgba(184,5,5,1.0)"
+                    "very high"; "rgba(230,51,13,1.0)"
+                    "high";      "rgba(242,128,26,1.0)"
+                    "rgba(242,217,26,1.0)"
                 })
                 .fillOpacity(0.40)
 
-            // Thin stroke around each zone
             LineLayer(id: "fire-stroke", source: "fire-zones")
                 .lineColor(Exp(.match) {
                     Exp(.get) { "severity" }
                     "extreme";   "rgba(184,5,5,0.7)"
                     "very high"; "rgba(230,51,13,0.7)"
                     "high";      "rgba(242,128,26,0.7)"
-                    "rgba(242,217,26,0.7)"  // default
+                    "rgba(242,217,26,0.7)"
                 })
                 .lineWidth(1.5)
         }
     }
 
-    // MARK: - Electric Lines Layer
-
-    /// Electric transmission lines as yellow polylines.
     @MapboxMaps.MapContentBuilder
     var electricLayerContent: some MapboxMaps.MapContent {
         if selectedCategory == .electricLines, !electricLines.isEmpty {
             GeoJSONSource(id: "electric-lines")
-                .data(.featureCollection(electricLineFeatureCollection))
+                .data(.featureCollection(electricLineFC))
 
             LineLayer(id: "electric-line", source: "electric-lines")
-                .lineColor(UIColor.systemYellow.withAlphaComponent(0.75))
+                .lineColor(StyleColor(UIColor.systemYellow.withAlphaComponent(0.75)))
                 .lineWidth(2.5)
         }
     }
 
-    // MARK: - Odor Zones Layer
-
-    /// Odor/air quality zones as brown-tinted fill polygons.
     @MapboxMaps.MapContentBuilder
     var odorLayerContent: some MapboxMaps.MapContent {
         if selectedCategory == .milpitasOdor, !odorZones.isEmpty {
             GeoJSONSource(id: "odor-zones")
-                .data(.featureCollection(odorZoneFeatureCollection))
+                .data(.featureCollection(odorZoneFC))
 
             FillLayer(id: "odor-fill", source: "odor-zones")
-                .fillColor(UIColor.systemBrown.withAlphaComponent(0.30))
+                .fillColor(StyleColor(UIColor.systemBrown.withAlphaComponent(0.30)))
 
             LineLayer(id: "odor-stroke", source: "odor-zones")
-                .lineColor(UIColor.systemBrown.withAlphaComponent(0.55))
+                .lineColor(StyleColor(UIColor.systemBrown.withAlphaComponent(0.55)))
                 .lineWidth(1.0)
         }
     }
 
-    // MARK: - ZIP Polygons Layer
-
-    /// ZIP code polygons with highlight support and text labels at centroids.
-    /// 445 ZIP regions rendered via Mapbox vector tile engine (no manual culling).
     @MapboxMaps.MapContentBuilder
     var zipLayerContent: some MapboxMaps.MapContent {
-        if selectedCategory == .population, !zipRegions.isEmpty {
-            // Polygon source — Mapbox default tolerance (0.375) handles simplification
-            GeoJSONSource(id: "zip-polygons")
-                .data(.featureCollection(zipPolygonFeatureCollection))
-
-            // Fill: default faint gold, highlighted = pink
-            FillLayer(id: "zip-fill", source: "zip-polygons")
-                .fillColor(Exp(.match) {
-                    Exp(.get) { "isHighlighted" }
-                    "true";  "rgba(255,45,85,0.28)"   // systemPink-ish
-                    "rgba(255,235,77,0.06)"            // faint gold default
-                })
-                .fillOpacity(1.0)
-
-            // Stroke: highlighted = pink, default = gold
-            LineLayer(id: "zip-stroke", source: "zip-polygons")
-                .lineColor(Exp(.match) {
-                    Exp(.get) { "isHighlighted" }
-                    "true";  "rgba(255,45,85,0.85)"
-                    "rgba(212,175,55,0.70)"
-                })
-                .lineWidth(Exp(.match) {
-                    Exp(.get) { "isHighlighted" }
-                    "true";  2.5
-                    1.5
-                })
-
-            // Label source — separate Point features at each ZIP centroid
-            GeoJSONSource(id: "zip-labels")
-                .data(.featureCollection(zipLabelFeatureCollection))
-
-            // ZIP code text labels at centroids
-            SymbolLayer(id: "zip-labels", source: "zip-labels")
-                .textField(Exp(.get) { "zipId" })
-                .textSize(10.0)
-                .textColor(StyleColor(UIColor.darkText))
-                .textHaloColor(StyleColor(UIColor.white.withAlphaComponent(0.75)))
-                .textHaloWidth(1.0)
-                .textAllowOverlap(false)
-        }
-    }
-
-    // MARK: - Noise Roads Layer (Task 3)
-
-    /// Noise roads with stacked smoke/haze effect — implemented in Task 3.
-    @MapboxMaps.MapContentBuilder
-    var noiseLayerContent: some MapboxMaps.MapContent {
-        // Placeholder — full implementation in Task 3
         if false { Puck2D() }
     }
 
-    // MARK: - GeoJSON Helpers (Overlay Layers)
+    @MapboxMaps.MapContentBuilder
+    var noiseLayerContent: some MapboxMaps.MapContent {
+        if false { Puck2D() }
+    }
+}
 
-    /// Fire zones → FeatureCollection of Polygons with severity property.
-    private var fireZoneFeatureCollection: FeatureCollection {
-        let features = fireZones.map { zone -> Feature in
-            var feature = Feature(geometry: .polygon(Polygon([zone.coordinates])))
-            feature.properties = ["severity": .string(zone.severity)]
-            return feature
-        }
-        return FeatureCollection(features: features)
+// MARK: - GeoJSON Helpers
+
+extension HFMapView {
+
+    private var fireZoneFC: FeatureCollection {
+        FeatureCollection(features: fireZones.map { zone in
+            var f = Feature(geometry: .polygon(Polygon([zone.coordinates])))
+            f.properties = ["severity": .string(zone.severity)]
+            return f
+        })
     }
 
-    /// Electric lines → FeatureCollection of LineStrings with voltage property.
-    private var electricLineFeatureCollection: FeatureCollection {
-        let features = electricLines.map { line -> Feature in
-            var feature = Feature(geometry: .lineString(LineString(line.coordinates)))
-            feature.properties = ["voltage": .number(Double(line.voltage))]
-            return feature
-        }
-        return FeatureCollection(features: features)
+    private var electricLineFC: FeatureCollection {
+        FeatureCollection(features: electricLines.map { line in
+            var f = Feature(geometry: .lineString(LineString(line.coordinates)))
+            f.properties = ["voltage": .number(Double(line.voltage))]
+            return f
+        })
     }
 
-    /// Odor zones → FeatureCollection of Polygons with value property.
-    private var odorZoneFeatureCollection: FeatureCollection {
-        let features = odorZones.map { zone -> Feature in
-            var feature = Feature(geometry: .polygon(Polygon([zone.coordinates])))
-            feature.properties = ["value": .number(zone.value)]
-            return feature
-        }
-        return FeatureCollection(features: features)
+    private var odorZoneFC: FeatureCollection {
+        FeatureCollection(features: odorZones.map { zone in
+            var f = Feature(geometry: .polygon(Polygon([zone.coordinates])))
+            f.properties = ["value": .number(zone.value)]
+            return f
+        })
     }
 
-    /// ZIP regions → FeatureCollection of Polygons with zipId and isHighlighted properties.
-    private var zipPolygonFeatureCollection: FeatureCollection {
-        let features = zipRegions.map { region -> Feature in
-            var feature = Feature(geometry: .polygon(Polygon([region.polygon])))
-            let highlighted = (region.id == highlightedZIPId) ? "true" : "false"
-            feature.properties = [
-                "zipId": .string(region.id),
-                "isHighlighted": .string(highlighted)
-            ]
-            return feature
-        }
-        return FeatureCollection(features: features)
+    private var crimeHotspotsFC: FeatureCollection {
+        FeatureCollection(features: crimeHotspots.map { h in
+            var f = Feature(geometry: .point(Point(
+                CLLocationCoordinate2D(latitude: h.lat, longitude: h.lon)
+            )))
+            f.properties = ["weight": .number(h.weight)]
+            return f
+        })
     }
 
-    /// ZIP centroids → FeatureCollection of Points for SymbolLayer labels.
-    private var zipLabelFeatureCollection: FeatureCollection {
-        let features = zipRegions.map { region -> Feature in
-            var feature = Feature(geometry: .point(Point(region.center)))
-            feature.properties = ["zipId": .string(region.id)]
-            return feature
-        }
-        return FeatureCollection(features: features)
-    }
-
-    // MARK: - GeoJSON Helpers (Crime)
-
-    /// Converts crimeHotspots array to a Turf FeatureCollection for the heatmap source.
-    private var crimeHotspotsFeatureCollection: FeatureCollection {
-        let features = crimeHotspots.map { hotspot -> Feature in
-            var feature = Feature(
-                geometry: .point(Point(CLLocationCoordinate2D(
-                    latitude: hotspot.lat,
-                    longitude: hotspot.lon
-                )))
-            )
-            feature.properties = ["weight": .number(hotspot.weight)]
-            return feature
-        }
-        return FeatureCollection(features: features)
-    }
-
-    /// Converts DensityGrid cells to a FeatureCollection for cluster markers.
-    /// Each cell with count > 0 becomes a Point feature at the cell center.
-    private func densityGridFeatureCollection(_ grid: DensityGrid) -> FeatureCollection {
+    private func densityGridFC(_ grid: DensityGrid) -> FeatureCollection {
         var features: [Feature] = []
         for row in 0..<grid.rows {
             for col in 0..<grid.cols {
@@ -380,11 +330,11 @@ extension HFMapView {
                 guard count > 0 else { continue }
                 let lat = grid.origin.latitude + (Double(row) + 0.5) * grid.cellSize
                 let lon = grid.origin.longitude + (Double(col) + 0.5) * grid.cellSize
-                var feature = Feature(
-                    geometry: .point(Point(CLLocationCoordinate2D(latitude: lat, longitude: lon)))
-                )
-                feature.properties = ["count": .number(Double(count))]
-                features.append(feature)
+                var f = Feature(geometry: .point(Point(
+                    CLLocationCoordinate2D(latitude: lat, longitude: lon)
+                )))
+                f.properties = ["count": .number(Double(count))]
+                features.append(f)
             }
         }
         return FeatureCollection(features: features)

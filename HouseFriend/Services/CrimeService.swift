@@ -255,6 +255,8 @@ class CrimeService: ObservableObject {
             return parseSFIncidents(from: json)
         case "Oakland":
             return parseOaklandIncidents(from: json)
+        case "Marin County":
+            return parseMarinIncidents(from: json)
         default:
             return []
         }
@@ -290,6 +292,21 @@ class CrimeService: ObservableObject {
                 description: item["description"] as? String ?? crimeType,
                 coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
                 date: Self.parseSODADate(item["datetime"] as? String)
+            )
+        }
+    }
+
+    private func parseMarinIncidents(from json: [[String: Any]]) -> [CrimeIncident] {
+        json.compactMap { item -> CrimeIncident? in
+            guard let crime = item["crime"] as? String,
+                  let latStr = item["latitude"] as? String, let lat = Double(latStr),
+                  let lonStr = item["longitude"] as? String, let lon = Double(lonStr) else { return nil }
+            guard lat.isFinite, lon.isFinite else { return nil }
+            return CrimeIncident(
+                category: crime,
+                description: item["crime_class"] as? String ?? crime,
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                date: Self.parseSODADate(item["incident_date_time"] as? String)
             )
         }
     }

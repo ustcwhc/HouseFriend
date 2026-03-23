@@ -54,6 +54,18 @@ struct CityEndpoint {
                 description: "description",
                 parseFields: ["location_1", "crimetype", "datetime"]
             )
+        ),
+        CityEndpoint(
+            name: "Marin County",
+            baseURL: "https://data.marincounty.gov/resource/ahxi-5nsc.json",
+            boundingBox: (swLat: 37.813, swLon: -122.780, neLat: 38.085, neLon: -122.350),
+            fieldMapping: FieldMapping(
+                geoColumn: "location",
+                category: "crime",
+                datetime: "incident_date_time",
+                description: "crime_class",
+                parseFields: ["latitude", "longitude", "crime", "incident_date_time"]
+            )
         )
     ]
 

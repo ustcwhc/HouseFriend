@@ -71,16 +71,15 @@ class CrimeService: ObservableObject {
 
         let matchingEndpoints = CityEndpoint.endpointsForRegion(lat: lat, lon: lon, span: span)
 
-        // No endpoints cover this area
-        guard !matchingEndpoints.isEmpty else {
+        // Always ensure bundled densities are loaded (San Jose, etc.)
+        if tractCrimeDensities.isEmpty && !bundledTractDensities.isEmpty {
             DispatchQueue.main.async {
-                self.errorMessage = "Crime data not available for this area"
-                self.incidents = []
-                self.stats = CrimeStats(score: 0, label: "No Data", incidentCount: 0)
-                self.densityGrid = nil
-                self.tractCrimeDensities = [:]
-                self.recencyLabel = ""
+                self.tractCrimeDensities = self.bundledTractDensities
             }
+        }
+
+        // No SODA endpoints cover this area — bundled data still shows
+        guard !matchingEndpoints.isEmpty else {
             lastFetchCenter = (lat: lat, lon: lon)
             lastFetchSpan = span
             return

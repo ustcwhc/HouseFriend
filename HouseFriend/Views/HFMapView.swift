@@ -12,7 +12,6 @@ struct HFMapView: View {
     // MARK: - Bindings / config
     @Binding var viewport: Viewport
     let selectedCategory: CategoryType
-    let showCrimeDetails: Bool
     let pinnedLocation: CLLocationCoordinate2D?
 
     // MARK: - Layer data
@@ -26,8 +25,6 @@ struct HFMapView: View {
     let odorZones: [MapZone]
     let zipRegions: [ZIPCodeRegion]
     let highlightedZIPId: String?
-    let crimeMarkers: [CrimeMarker]
-    let densityGrid: DensityGrid?
     let crimeHotspots: [CrimeHotspot]
     let crimeIncidents: [CrimeIncident]
     let tractCrimeDensities: [String: Double]
@@ -42,9 +39,11 @@ struct HFMapView: View {
     var onMapTap: (CLLocationCoordinate2D) -> Void = { _ in }
     var onNoiseFetchCancel: () -> Void = {}
     var onMapLongPress: (CLLocationCoordinate2D) -> Void = { _ in }
+    var onClusterTap: ([CrimeDetail]) -> Void = { _ in }
 
     // MARK: - Local state
     @State private var currentZoom: Double = 14.0
+    @State private var iconsRegistered = false
 
     // MARK: - Body
 
@@ -58,7 +57,7 @@ struct HFMapView: View {
                 zipLayerContent
                 noiseLayerContent
                 crimeHeatmapContent
-                crimeClusterContent
+                crimeClusterContent(proxy: proxy)
                 annotationContent
             }
             .mapStyle(mapStyleForCategory)
@@ -70,7 +69,27 @@ struct HFMapView: View {
                 currentZoom = zoom
                 onCameraChange(center, zoom)
             }
+            .onStyleLoaded { _ in
+                registerCrimeIcons(proxy: proxy)
+            }
         }
+    }
+
+    /// Register SF Symbol images for crime category icons on the map style.
+    private func registerCrimeIcons(proxy: MapProxy) {
+        guard !iconsRegistered, let map = proxy.map else { return }
+        let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+        for (name, id) in [
+            ("bolt.shield.fill", "crime-violent"),
+            ("house.fill", "crime-property"),
+            ("car.fill", "crime-vehicle"),
+            ("circle.fill", "crime-other")
+        ] {
+            if let img = UIImage(systemName: name, withConfiguration: config) {
+                try? map.addImage(img, id: id, sdf: true)
+            }
+        }
+        iconsRegistered = true
     }
 
     private var mapStyleForCategory: MapboxMaps.MapStyle {
@@ -120,70 +139,142 @@ extension HFMapView {
     }
 
     /// Clustered GeoJSON source — Mapbox merges nearby points at lower zooms
+    /// Aggregates severity weight sum for color/size scaling
     private var crimeClusterSource: GeoJSONSource {
         var src = GeoJSONSource(id: "crime-clusters")
         src.cluster = true
-        src.clusterRadius = 50          // px radius to merge (default 50)
-        src.clusterMaxZoom = 14         // stop clustering at z15+
-        // Aggregate "count" across clustered points via sum
+        src.clusterRadius = 50
+        src.clusterMaxZoom = 14
         src.clusterProperties = [
-            "sum": Exp(.accumulated) {
+            "severity_sum": Exp(.accumulated) {
                 Exp(.sum) {}
-                Exp(.get) { "count" }
+                Exp(.get) { "weight" }
             }
         ]
         return src
     }
 
+    /// Cluster circles + individual crime icons (always visible when crime layer active)
     @MapboxMaps.MapContentBuilder
-    var crimeClusterContent: some MapboxMaps.MapContent {
-        if selectedCategory == .crime, showCrimeDetails, let grid = densityGrid {
+    func crimeClusterContent(proxy: MapProxy) -> some MapboxMaps.MapContent {
+        if selectedCategory == .crime, !crimeIncidents.isEmpty {
             crimeClusterSource
-                .data(.featureCollection(densityGridFC(grid)))
+                .data(.featureCollection(crimeIncidentFC))
 
-            // -- Clustered points (merged at zoom-out) --
+            // -- Clustered circles: severity-weighted color (gray -> orange -> red) --
             CircleLayer(id: "crime-cluster-circles", source: "crime-clusters")
                 .filter(Exp(.has) { "point_count" })
                 .circleRadius(Exp(.step) {
-                    Exp(.get) { "sum" }; 18; 10; 22; 50; 26; 100; 30
+                    Exp(.get) { "severity_sum" }; 18; 10; 22; 30; 26; 80; 30
                 })
-                .circleColor(StyleColor(.white))
+                .circleColor(Exp(.interpolate) {
+                    Exp(.linear); Exp(.get) { "severity_sum" }
+                    0;   "rgba(180,180,180,1)"   // gray (low)
+                    15;  "rgba(251,146,60,1)"    // orange (moderate)
+                    40;  "rgba(239,68,68,1)"     // red (high)
+                })
                 .circleStrokeWidth(2.0)
-                .circleStrokeColor(Exp(.step) {
-                    Exp(.get) { "sum" }; "orange"; 20; "red"
-                })
+                .circleStrokeColor(StyleColor(.white))
+                .circleEmissiveStrength(1.0)
 
+            // -- Cluster labels: show rounded severity_sum --
             SymbolLayer(id: "crime-cluster-labels", source: "crime-clusters")
                 .filter(Exp(.has) { "point_count" })
-                .textField(Exp(.toString) { Exp(.get) { "sum" } })
+                .textField(Exp(.toString) { Exp(.round) { Exp(.get) { "severity_sum" } } })
                 .textSize(13.0)
-                .textColor(Exp(.step) {
-                    Exp(.get) { "sum" }; "orange"; 20; "red"
-                })
+                .textColor(StyleColor(.white))
                 .textFont(["DIN Pro Bold"])
                 .textAllowOverlap(true)
 
-            // -- Unclustered individual points (visible at detail zoom) --
-            CircleLayer(id: "crime-single-circles", source: "crime-clusters")
-                .filter(Exp(.not) { Exp(.has) { "point_count" } })
-                .circleRadius(Exp(.step) {
-                    Exp(.get) { "count" }; 14; 5; 17; 20; 20
-                })
-                .circleColor(StyleColor(.white))
-                .circleStrokeWidth(2.0)
-                .circleStrokeColor(Exp(.step) {
-                    Exp(.get) { "count" }; "gray"; 5; "orange"; 10; "red"
-                })
+            // -- Individual crime icons (unclustered, visible at z15+) --
+            makeCrimeSingleIconLayer()
 
-            SymbolLayer(id: "crime-single-labels", source: "crime-clusters")
-                .filter(Exp(.not) { Exp(.has) { "point_count" } })
-                .textField(Exp(.toString) { Exp(.get) { "count" } })
-                .textSize(12.0)
-                .textColor(Exp(.step) {
-                    Exp(.get) { "count" }; "gray"; 5; "orange"; 10; "red"
-                })
-                .textFont(["DIN Pro Bold"])
+            // -- Tap interactions --
+            TapInteraction(.layer("crime-cluster-circles")) { feature, _ in
+                handleClusterTap(feature: feature, proxy: proxy)
+                return true
+            }
+
+            TapInteraction(.layer("crime-single-icons")) { feature, _ in
+                handleSingleCrimeTap(feature: feature)
+                return true
+            }
         }
+    }
+
+    /// SymbolLayer for individual unclustered crime icons using pre-registered SF Symbols.
+    private func makeCrimeSingleIconLayer() -> SymbolLayer {
+        var layer = SymbolLayer(id: "crime-single-icons", source: "crime-clusters")
+        layer.filter = Exp(.not) { Exp(.has) { "point_count" } }
+        layer.iconImage = .expression(Exp(.match) {
+            Exp(.get) { "severity" }
+            "violent";  "crime-violent"
+            "property"; "crime-property"
+            "vehicle";  "crime-vehicle"
+            "crime-other"
+        })
+        layer.iconSize = .constant(1.0)
+        layer.iconAllowOverlap = .constant(true)
+        // Tint icons by severity color for visual clarity
+        layer.iconColor = .expression(Exp(.match) {
+            Exp(.get) { "severity" }
+            "violent";  "rgba(239,68,68,1)"
+            "property"; "rgba(251,146,60,1)"
+            "vehicle";  "rgba(234,179,8,1)"
+            "rgba(156,163,175,1)"
+        })
+        layer.iconEmissiveStrength = .constant(1.0)
+        return layer
+    }
+
+    // MARK: - Cluster tap handlers
+
+    /// Query cluster leaves and surface crime details via onClusterTap callback.
+    private func handleClusterTap(feature: FeaturesetFeature, proxy: MapProxy) {
+        guard let map = proxy.map else { return }
+        // Reconstruct Turf.Feature from public API (geoJsonFeature is internal)
+        var clusterFeature = Feature(geometry: feature.geometry)
+        clusterFeature.properties = feature.properties
+        map.getGeoJsonClusterLeaves(
+            forSourceId: "crime-clusters",
+            feature: clusterFeature,
+            limit: 100,
+            offset: 0
+        ) { result in
+            switch result {
+            case .success(let extensionValue):
+                let crimes = (extensionValue.features ?? []).compactMap { f -> CrimeDetail? in
+                    guard let p = f.properties,
+                          case let .string(cat) = p["category"],
+                          case let .string(desc) = p["description"],
+                          case let .string(date) = p["date"],
+                          case let .string(sev) = p["severity"] else { return nil }
+                    return CrimeDetail(
+                        category: cat, description: desc, date: date,
+                        severity: CrimeSeverity(rawValue: sev) ?? .other
+                    )
+                }
+                if !crimes.isEmpty {
+                    DispatchQueue.main.async { onClusterTap(crimes) }
+                }
+            case .failure(let error):
+                AppLogger.map.error("Failed to get cluster leaves: \(error)")
+            }
+        }
+    }
+
+    /// Extract single crime detail from an unclustered feature.
+    private func handleSingleCrimeTap(feature: FeaturesetFeature) {
+        let p = feature.properties
+        guard case let .string(cat) = p["category"],
+              case let .string(desc) = p["description"],
+              case let .string(date) = p["date"],
+              case let .string(sev) = p["severity"] else { return }
+        let detail = CrimeDetail(
+            category: cat, description: desc, date: date,
+            severity: CrimeSeverity(rawValue: sev) ?? .other
+        )
+        DispatchQueue.main.async { onClusterTap([detail]) }
     }
 }
 
@@ -524,21 +615,4 @@ extension HFMapView {
         })
     }
 
-    private func densityGridFC(_ grid: DensityGrid) -> FeatureCollection {
-        var features: [Feature] = []
-        for row in 0..<grid.rows {
-            for col in 0..<grid.cols {
-                let count = grid.counts[row][col]
-                guard count > 0 else { continue }
-                let lat = grid.origin.latitude + (Double(row) + 0.5) * grid.cellSize
-                let lon = grid.origin.longitude + (Double(col) + 0.5) * grid.cellSize
-                var f = Feature(geometry: .point(Point(
-                    CLLocationCoordinate2D(latitude: lat, longitude: lon)
-                )))
-                f.properties = ["count": .number(Double(count))]
-                features.append(f)
-            }
-        }
-        return FeatureCollection(features: features)
-    }
 }

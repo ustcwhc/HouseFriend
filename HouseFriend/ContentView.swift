@@ -247,7 +247,6 @@ struct ContentView: View {
         HFMapView(
             viewport: $mapViewport,
             selectedCategory: selectedCategory,
-            showCrimeDetails: showCrimeDetails,
             pinnedLocation: pinnedLocation,
             noiseRoads: noiseService.roads,
             earthquakes: earthquakeService.events,
@@ -259,8 +258,6 @@ struct ContentView: View {
             odorZones: odorMapZones(),
             zipRegions: zipRegions,
             highlightedZIPId: highlightedZIPId,
-            crimeMarkers: [],
-            densityGrid: crimeService.densityGrid,
             crimeHotspots: crimeService.hotspots,
             crimeIncidents: crimeService.incidents,
             tractCrimeDensities: crimeService.tractCrimeDensities,

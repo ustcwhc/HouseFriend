@@ -6,13 +6,6 @@ struct CrimeDetailSheet: View {
 
     var body: some View {
         NavigationStack {
-            if crimes.isEmpty {
-                ContentUnavailableView(
-                    "No Incidents",
-                    systemImage: "shield.checkered",
-                    description: Text("No crime incidents found in this area.")
-                )
-            }
             List(crimes) { crime in
                 HStack(spacing: 12) {
                     Image(systemName: crime.severity.iconName)

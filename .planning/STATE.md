@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 01-server-side-scoping-01-PLAN.md
-last_updated: "2026-03-24T04:17:29.193Z"
+stopped_at: Completed 02.2-02-PLAN.md
+last_updated: "2026-03-25T06:24:27.983Z"
 progress:
-  total_phases: 9
-  completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_phases: 10
+  completed_phases: 4
+  total_plans: 10
+  completed_plans: 10
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-22)
 
 **Core value:** Users can instantly visualize and score any Bay Area neighborhood across 10 safety/quality dimensions from a single map interface
-**Current focus:** Phase 02.1 — mapbox-migration
+**Current focus:** Phase 02.2 — crime-cluster-ux
 
 ## Current Position
 
-Phase: 02.1 (mapbox-migration) — EXECUTING
-Plan: 4 of 4
+Phase: 3
+Plan: Not started
 
 ## Performance Metrics
 
@@ -55,6 +55,8 @@ Plan: 4 of 4
 | Phase 02.1 P02 | 12min | 3 tasks | 1 files |
 | Phase 02.1 P04 | 2min | 1 tasks | 4 files |
 | Phase 01-server-side-scoping P01 | 2 | 2 tasks | 3 files |
+| Phase 02.2 P01 | 5min | 2 tasks | 4 files |
+| Phase 02.2 P02 | 7min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -86,6 +88,12 @@ Recent decisions affecting current work:
 - [Phase 02.1]: Replaced import MapKit with import CoreLocation in HFMapView after full Mapbox migration
 - [Phase 01-server-side-scoping]: patch exit code 2 treated as no-op — allows placeholder patch before 01-02 populates real diff
 - [Phase 01-server-side-scoping]: SessionStart hook appended to existing hooks array, not a second SessionStart element
+- [Phase 02.2]: Vehicle keywords checked before property in CrimeSeverity classifier for correct priority
+- [Phase 02.2]: Heatmap opacity 0.55 balances severity visualization with street name readability
+- [Phase 02.2]: crimeIncidentFC carries full metadata (weight/severity/category/description/date) for reuse by cluster layers
+- [Phase 02.2]: Reconstruct Turf.Feature from FeaturesetFeature public API since geoJsonFeature is internal
+- [Phase 02.2]: Single onClusterTap callback for both cluster and single crime taps
+- [Phase 02.2]: showCrimeDetails toggle removed — clusters always visible when crime layer active
 
 ### Pending Todos
 
@@ -100,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-24T04:17:29.191Z
-Stopped at: Completed 01-server-side-scoping-01-PLAN.md
+Last session: 2026-03-25T06:20:10.149Z
+Stopped at: Completed 02.2-02-PLAN.md
 Resume file: None

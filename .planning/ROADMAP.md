@@ -15,6 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: API Caching Foundation** - Shared ResponseCache (memory + disk, per-layer TTLs) that all API services use (completed 2026-03-24)
 - [ ] **Phase 2: Real Crime Data** - CrimeService wired to SF Open Data and Oakland CrimeWatch SODA APIs
 - [x] **Phase 02.1: Mapbox Migration (INSERTED)** - Replace Apple MapKit with Mapbox SDK for all 10 map layers (completed 2026-03-23)
+- [x] **Phase 02.2: Crime Cluster UX (INSERTED)** - Incident-based clustering with severity weighting, category icons, tap-to-detail, and severity-gradient heatmap (completed 2026-03-25)
 - [ ] **Phase 3: School Data** - SchoolService wired to CDE Dashboard data with school pins on map
 - [ ] **Phase 4: Dark Mode** - Custom overlay renderers updated for dynamic color and system dark mode toggle
 - [ ] **Phase 5: Loading & Layer Polish** - Spinners on all layers, descriptive report text, data attribution, expanded data sets
@@ -73,6 +74,25 @@ Plans:
 - [x] 02.1-02-PLAN.md — Polygon/polyline layers (fire, electric, odor, ZIP, noise smoke)
 - [x] 02.1-03-PLAN.md — Crime HeatmapLayer and all annotation types (schools, superfund, earthquake, housing, clusters, pin)
 - [x] 02.1-04-PLAN.md — Cleanup (delete old renderers, move Hotspot type) and visual verification checkpoint
+
+### Phase 02.2: Crime Cluster UX (INSERTED)
+
+**Goal:** Replace grid-based crime markers with incident-based Mapbox clustering, add severity weighting, category icons at high zoom, tap-to-detail interaction, and rework heatmap gradient to reflect severity.
+**Depends on:** Phase 02.1
+**Success Criteria** (what must be TRUE):
+  1. Crime cluster markers appear at actual incident centroids, not evenly-spaced grid cell centers
+  2. Zooming out merges nearby incidents into cluster circles showing weighted sum; zooming in expands them
+  3. Cluster circle color reflects total weighted danger (gray → orange → red)
+  4. At high zoom (z15+), individual crimes show category icons (violent, property, vehicle, other)
+  5. Tapping a cluster shows a bottom sheet listing the crimes with category, date, and description
+  6. Heatmap gradient is transparent → green → yellow → orange → red based on severity-weighted density
+  7. Heatmap opacity is 0.5-0.6 with street names readable underneath
+  8. Heatmap always visible as background layer with clusters on top
+**Plans:** 2/2 plans complete
+
+Plans:
+- [x] 02.2-01-PLAN.md — CrimeSeverity model, incident-based FeatureCollection, severity-weighted green-to-red heatmap
+- [x] 02.2-02-PLAN.md — Incident-based cluster layers, category icons, tap-to-detail bottom sheet
 
 ### Phase 3: School Data
 **Goal**: School pins appear on the map with real CDE rating data, color-coded by level, and neighborhood report school scoring uses real grades
@@ -150,13 +170,14 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. API Caching Foundation | 2/2 | Complete   | 2026-03-24 |
 | 2. Real Crime Data | 2/2 | Complete | - |
 | 02.1. Mapbox Migration | 4/4 | Complete   | 2026-03-23 |
+| 02.2. Crime Cluster UX | 2/2 | Complete    | 2026-03-25 |
 | 3. School Data | 0/TBD | Not started | - |
 | 4. Dark Mode | 0/TBD | Not started | - |
 | 5. Loading & Layer Polish | 0/TBD | Not started | - |

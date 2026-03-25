@@ -110,13 +110,53 @@ extension HFMapView {
         }
     }
 
+    /// Clustered GeoJSON source — Mapbox merges nearby points at lower zooms
+    private var crimeClusterSource: GeoJSONSource {
+        var src = GeoJSONSource(id: "crime-clusters")
+        src.cluster = true
+        src.clusterRadius = 50          // px radius to merge (default 50)
+        src.clusterMaxZoom = 14         // stop clustering at z15+
+        // Aggregate "count" across clustered points via sum
+        src.clusterProperties = [
+            "sum": Exp(.accumulated) {
+                Exp(.sum) {}
+                Exp(.get) { "count" }
+            }
+        ]
+        return src
+    }
+
     @MapboxMaps.MapContentBuilder
     var crimeClusterContent: some MapboxMaps.MapContent {
         if selectedCategory == .crime, showCrimeDetails, let grid = densityGrid {
-            GeoJSONSource(id: "crime-clusters")
+            crimeClusterSource
                 .data(.featureCollection(densityGridFC(grid)))
 
+            // -- Clustered points (merged at zoom-out) --
             CircleLayer(id: "crime-cluster-circles", source: "crime-clusters")
+                .filter(Exp(.has) { "point_count" })
+                .circleRadius(Exp(.step) {
+                    Exp(.get) { "sum" }; 18; 10; 22; 50; 26; 100; 30
+                })
+                .circleColor(StyleColor(.white))
+                .circleStrokeWidth(2.0)
+                .circleStrokeColor(Exp(.step) {
+                    Exp(.get) { "sum" }; "orange"; 20; "red"
+                })
+
+            SymbolLayer(id: "crime-cluster-labels", source: "crime-clusters")
+                .filter(Exp(.has) { "point_count" })
+                .textField(Exp(.toString) { Exp(.get) { "sum" } })
+                .textSize(13.0)
+                .textColor(Exp(.step) {
+                    Exp(.get) { "sum" }; "orange"; 20; "red"
+                })
+                .textFont(["DIN Pro Bold"])
+                .textAllowOverlap(true)
+
+            // -- Unclustered individual points (visible at detail zoom) --
+            CircleLayer(id: "crime-single-circles", source: "crime-clusters")
+                .filter(Exp(.not) { Exp(.has) { "point_count" } })
                 .circleRadius(Exp(.step) {
                     Exp(.get) { "count" }; 14; 5; 17; 20; 20
                 })
@@ -126,14 +166,14 @@ extension HFMapView {
                     Exp(.get) { "count" }; "gray"; 5; "orange"; 10; "red"
                 })
 
-            SymbolLayer(id: "crime-cluster-labels", source: "crime-clusters")
+            SymbolLayer(id: "crime-single-labels", source: "crime-clusters")
+                .filter(Exp(.not) { Exp(.has) { "point_count" } })
                 .textField(Exp(.toString) { Exp(.get) { "count" } })
                 .textSize(12.0)
                 .textColor(Exp(.step) {
                     Exp(.get) { "count" }; "gray"; 5; "orange"; 10; "red"
                 })
                 .textFont(["DIN Pro Bold"])
-                .textAllowOverlap(true)
         }
     }
 }

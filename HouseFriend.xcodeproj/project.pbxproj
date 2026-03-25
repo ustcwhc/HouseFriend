@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		8D44C6072F70FD9F0066C494 /* MapboxMaps in Frameworks */ = {isa = PBXBuildFile; productRef = 3FA0B0022FA0000200000001 /* MapboxMaps */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		3F38C53D2F5D295B00677F46 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8D44C6072F70FD9F0066C494 /* MapboxMaps in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -196,13 +201,13 @@
 			);
 			mainGroup = 3F38C5252F5D295A00677F46;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3FA0B0012FA0000100000001 /* XCRemoteSwiftPackageReference "mapbox-maps-ios" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3F38C52F2F5D295A00677F46 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-			packageReferences = (
-				3FA0B0012FA0000100000001 /* XCRemoteSwiftPackageReference "mapbox-maps-ios" */,
-			);
 			targets = (
 				3F38C52D2F5D295A00677F46 /* HouseFriend */,
 				3F38C53B2F5D295B00677F46 /* HouseFriendTests */,

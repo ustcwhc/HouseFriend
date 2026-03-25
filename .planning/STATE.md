@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: "Completed 02.1-04-PLAN.md (Task 2 checkpoint: visual verification pending)"
-last_updated: "2026-03-23T06:18:56.948Z"
+stopped_at: Completed 01-server-side-scoping-01-PLAN.md
+last_updated: "2026-03-24T04:17:29.193Z"
 progress:
   total_phases: 9
   completed_phases: 3
@@ -54,6 +54,7 @@ Plan: 4 of 4
 | Phase 02.1 P03 | 11min | 2 tasks | 1 files |
 | Phase 02.1 P02 | 12min | 3 tasks | 1 files |
 | Phase 02.1 P04 | 2min | 1 tasks | 4 files |
+| Phase 01-server-side-scoping P01 | 2 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,8 @@ Recent decisions affecting current work:
 - [Phase 02.1]: Helper functions for layers needing filter property (not chainable in MapContent builder)
 - [Phase 02.1]: Moved CrimeHotspot struct to CrimeService.swift (co-located with service)
 - [Phase 02.1]: Replaced import MapKit with import CoreLocation in HFMapView after full Mapbox migration
+- [Phase 01-server-side-scoping]: patch exit code 2 treated as no-op — allows placeholder patch before 01-02 populates real diff
+- [Phase 01-server-side-scoping]: SessionStart hook appended to existing hooks array, not a second SessionStart element
 
 ### Pending Todos
 
@@ -97,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T06:18:56.946Z
-Stopped at: Completed 02.1-04-PLAN.md (Task 2 checkpoint: visual verification pending)
+Last session: 2026-03-24T04:17:29.191Z
+Stopped at: Completed 01-server-side-scoping-01-PLAN.md
 Resume file: None

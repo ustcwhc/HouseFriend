@@ -12,7 +12,7 @@ HouseFriend's core 10-layer map is complete. This milestone replaces placeholder
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: API Caching Foundation** - Shared ResponseCache (memory + disk, per-layer TTLs) that all API services use
+- [x] **Phase 1: API Caching Foundation** - Shared ResponseCache (memory + disk, per-layer TTLs) that all API services use (completed 2026-03-24)
 - [ ] **Phase 2: Real Crime Data** - CrimeService wired to SF Open Data and Oakland CrimeWatch SODA APIs
 - [x] **Phase 02.1: Mapbox Migration (INSERTED)** - Replace Apple MapKit with Mapbox SDK for all 10 map layers (completed 2026-03-23)
 - [ ] **Phase 3: School Data** - SchoolService wired to CDE Dashboard data with school pins on map
@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Panning the map within a region that was recently fetched does not trigger a new network request for that layer
   2. Cache entries for earthquake data expire after 30 minutes; air quality after 1 hour; crime after 24 hours; bundled static data never expires
   3. Fetching the same location twice within the TTL window returns cached data without any network activity (verifiable via console or proxy)
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 - [x] 01-01-PLAN.md — ResponseCache singleton with two-level cache (NSCache + disk) and per-layer TTLs (TDD)
 - [x] 01-02-PLAN.md — Integrate ResponseCache into all 5 network services
@@ -154,7 +154,7 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5 → 6 → 7 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. API Caching Foundation | 2/2 | Complete | - |
+| 1. API Caching Foundation | 2/2 | Complete   | 2026-03-24 |
 | 2. Real Crime Data | 2/2 | Complete | - |
 | 02.1. Mapbox Migration | 4/4 | Complete   | 2026-03-23 |
 | 3. School Data | 0/TBD | Not started | - |

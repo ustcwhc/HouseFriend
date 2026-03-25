@@ -29,6 +29,7 @@ struct HFMapView: View {
     let crimeMarkers: [CrimeMarker]
     let densityGrid: DensityGrid?
     let crimeHotspots: [CrimeHotspot]
+    let crimeIncidents: [CrimeIncident]
     let tractCrimeDensities: [String: Double]
     let censusTracts: [CensusTract]
 
@@ -83,30 +84,38 @@ extension HFMapView {
 
     @MapboxMaps.MapContentBuilder
     var crimeHeatmapContent: some MapboxMaps.MapContent {
-        if selectedCategory == .crime, !crimeHotspots.isEmpty {
+        if selectedCategory == .crime, !crimeIncidents.isEmpty {
             GeoJSONSource(id: "crime-incidents")
-                .data(.featureCollection(crimeHotspotsFC))
+                .data(.featureCollection(crimeIncidentFC))
 
+            // Severity-weighted heatmap: violent crimes produce hotter glow (D-12)
+            // Green-to-red gradient (D-13), wide spread ~500m at z14 (D-14)
             HeatmapLayer(id: "crime-heat", source: "crime-incidents")
                 .heatmapWeight(Exp(.get) { "weight" })
                 .heatmapIntensity(Exp(.interpolate) {
-                    Exp(.linear); Exp(.zoom); 0; 1; 9; 3
+                    Exp(.linear); Exp(.zoom)
+                    0; 0.5
+                    9; 1.5
+                    14; 2.5
                 })
                 .heatmapRadius(Exp(.interpolate) {
-                    Exp(.linear); Exp(.zoom); 0; 2; 9; 20; 14; 30
+                    Exp(.linear); Exp(.zoom)
+                    0; 4
+                    9; 25
+                    14; 50
                 })
                 .heatmapColor(Exp(.interpolate) {
                     Exp(.linear)
                     Exp(.heatmapDensity)
                     0;    "rgba(0,0,0,0)"
-                    0.12; "rgba(255,220,100,0.1)"
-                    0.25; "rgba(255,190,50,0.25)"
-                    0.40; "rgba(255,100,10,0.4)"
-                    0.55; "rgba(255,60,15,0.6)"
-                    0.75; "rgba(255,30,30,0.75)"
-                    1.0;  "rgba(255,30,30,0.85)"
+                    0.15; "rgba(34,197,94,0.2)"
+                    0.30; "rgba(163,230,53,0.35)"
+                    0.45; "rgba(250,204,21,0.5)"
+                    0.60; "rgba(251,146,60,0.6)"
+                    0.80; "rgba(239,68,68,0.7)"
+                    1.0;  "rgba(220,38,38,0.8)"
                 })
-                .heatmapOpacity(0.85)
+                .heatmapOpacity(0.55)
         }
     }
 
@@ -494,12 +503,23 @@ extension HFMapView {
         })
     }
 
-    private var crimeHotspotsFC: FeatureCollection {
-        FeatureCollection(features: crimeHotspots.map { h in
-            var f = Feature(geometry: .point(Point(
-                CLLocationCoordinate2D(latitude: h.lat, longitude: h.lon)
-            )))
-            f.properties = ["weight": .number(h.weight)]
+    /// Builds GeoJSON from raw crime incidents with severity properties.
+    /// Each feature carries weight, severity key, category, description, and date
+    /// for both heatmap rendering and future cluster detail sheets.
+    private var crimeIncidentFC: FeatureCollection {
+        let df = DateFormatter()
+        df.dateStyle = .short
+        df.timeStyle = .short
+        return FeatureCollection(features: crimeIncidents.map { incident in
+            let severity = CrimeSeverity.from(category: incident.category)
+            var f = Feature(geometry: .point(Point(incident.coordinate)))
+            f.properties = [
+                "weight": .number(severity.weight),
+                "severity": .string(severity.key),
+                "category": .string(incident.category),
+                "description": .string(incident.description),
+                "date": .string(df.string(from: incident.date))
+            ]
             return f
         })
     }

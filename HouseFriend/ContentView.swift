@@ -37,7 +37,8 @@ struct ContentView: View {
     @State private var pinnedAddress  = ""
     @State private var categories     = NeighborhoodCategory.all
     @State private var isLoadingScores = false
-    @State private var showCrimeDetails = false
+    @State private var crimeDetails: [CrimeDetail] = []
+    @State private var showCrimeDetailSheet = false
     @State private var selectedSchool: School?
     @State private var selectedSuperfund: SuperfundSite?
     @State private var selectedHousing: SupportiveHousingFacility?
@@ -89,25 +90,6 @@ struct ContentView: View {
                 HStack(alignment: .center) {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 8) {
-                        // Details toggle (crime layer only)
-                        if selectedCategory == .crime {
-                            HStack(spacing: 8) {
-                                Text("Details")
-                                    .font(.subheadline).fontWeight(.medium)
-                                Toggle("", isOn: $showCrimeDetails)
-                                    .labelsHidden()
-                                    .toggleStyle(.switch)
-                                    .tint(.blue)
-                                    .scaleEffect(0.85)
-                                    .onChange(of: showCrimeDetails) { _, on in
-                                        if on { refreshCrimeIncidents() }
-                                    }
-                            }
-                            .padding(.horizontal, 12).padding(.vertical, 7)
-                            .background(.regularMaterial)
-                            .cornerRadius(12)
-                            .shadow(color: .black.opacity(0.12), radius: 4)
-                        }
                         sideBar
                     }
                 }
@@ -239,6 +221,9 @@ struct ContentView: View {
         .sheet(item: $selectedSchool) { school in SchoolDetailSheet(school: school) }
         .sheet(item: $selectedSuperfund) { site in SuperfundDetailSheet(site: site) }
         .sheet(item: $selectedHousing) { f in HousingDetailSheet(facility: f) }
+        .sheet(isPresented: $showCrimeDetailSheet) {
+            CrimeDetailSheet(crimes: crimeDetails)
+        }
 
     }
 
@@ -313,6 +298,10 @@ struct ContentView: View {
             onMapLongPress: { coord in
                 pinnedLocation = coord
                 computeScores(coord: coord)
+            },
+            onClusterTap: { details in
+                crimeDetails = details
+                showCrimeDetailSheet = true
             }
         )
         .ignoresSafeArea()

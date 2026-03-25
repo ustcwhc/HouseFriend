@@ -243,7 +243,6 @@ struct ContentView: View {
             odorZones: odorMapZones(),
             zipRegions: zipRegions,
             highlightedZIPId: highlightedZIPId,
-            crimeHotspots: crimeService.hotspots,
             crimeIncidents: crimeService.incidents,
             tractCrimeDensities: crimeService.tractCrimeDensities,
             censusTracts: censusTracts,

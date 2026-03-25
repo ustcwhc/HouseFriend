@@ -25,7 +25,6 @@ struct HFMapView: View {
     let odorZones: [MapZone]
     let zipRegions: [ZIPCodeRegion]
     let highlightedZIPId: String?
-    let crimeHotspots: [CrimeHotspot]
     let crimeIncidents: [CrimeIncident]
     let tractCrimeDensities: [String: Double]
     let censusTracts: [CensusTract]
@@ -43,7 +42,6 @@ struct HFMapView: View {
 
     // MARK: - Local state
     @State private var currentZoom: Double = 14.0
-    @State private var iconsRegistered = false
 
     // MARK: - Body
 
@@ -76,8 +74,10 @@ struct HFMapView: View {
     }
 
     /// Register SF Symbol images for crime category icons on the map style.
+    /// Called on every style load — style changes clear registered images,
+    /// so we must re-register (addImage is idempotent and cheap).
     private func registerCrimeIcons(proxy: MapProxy) {
-        guard !iconsRegistered, let map = proxy.map else { return }
+        guard let map = proxy.map else { return }
         let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
         for (name, id) in [
             ("bolt.shield.fill", "crime-violent"),
@@ -89,7 +89,6 @@ struct HFMapView: View {
                 try? map.addImage(img, id: id, sdf: true)
             }
         }
-        iconsRegistered = true
     }
 
     private var mapStyleForCategory: MapboxMaps.MapStyle {
@@ -243,7 +242,11 @@ extension HFMapView {
         ) { result in
             switch result {
             case .success(let extensionValue):
-                let crimes = (extensionValue.features ?? []).compactMap { f -> CrimeDetail? in
+                guard let leaves = extensionValue.features else {
+                    AppLogger.map.warning("Cluster leaves returned nil features")
+                    return
+                }
+                let crimes = leaves.compactMap { f -> CrimeDetail? in
                     guard let p = f.properties,
                           case let .string(cat) = p["category"],
                           case let .string(desc) = p["description"],
@@ -594,14 +597,22 @@ extension HFMapView {
         })
     }
 
+    /// DateFormatter is expensive to init — reuse a single instance
+    private static let incidentDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .short
+        df.timeStyle = .short
+        return df
+    }()
+
     /// Builds GeoJSON from raw crime incidents with severity properties.
     /// Each feature carries weight, severity key, category, description, and date
     /// for both heatmap rendering and future cluster detail sheets.
     private var crimeIncidentFC: FeatureCollection {
-        let df = DateFormatter()
-        df.dateStyle = .short
-        df.timeStyle = .short
-        return FeatureCollection(features: crimeIncidents.map { incident in
+        return FeatureCollection(features: crimeIncidents.compactMap { incident in
+            let lat = incident.coordinate.latitude
+            let lon = incident.coordinate.longitude
+            guard lat.isFinite, lon.isFinite else { return nil }
             let severity = CrimeSeverity.from(category: incident.category)
             var f = Feature(geometry: .point(Point(incident.coordinate)))
             f.properties = [
@@ -609,7 +620,7 @@ extension HFMapView {
                 "severity": .string(severity.key),
                 "category": .string(incident.category),
                 "description": .string(incident.description),
-                "date": .string(df.string(from: incident.date))
+                "date": .string(Self.incidentDateFormatter.string(from: incident.date))
             ]
             return f
         })

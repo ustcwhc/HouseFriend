@@ -47,6 +47,10 @@ struct CrimeSeverityTests {
         #expect(CrimeSeverity.from(category: "disorderly conduct") == .other)
     }
 
+    @Test func testEmptyStringClassification() {
+        #expect(CrimeSeverity.from(category: "") == .other)
+    }
+
     // MARK: - Vehicle before property priority
 
     @Test func testVehicleBeforeProperty() {

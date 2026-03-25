@@ -88,10 +88,10 @@ Plans:
   6. Heatmap gradient is transparent → green → yellow → orange → red based on severity-weighted density
   7. Heatmap opacity is 0.5-0.6 with street names readable underneath
   8. Heatmap always visible as background layer with clusters on top
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
-- [ ] 02.2-01-PLAN.md — CrimeSeverity model, incident-based FeatureCollection, severity-weighted green-to-red heatmap
+- [x] 02.2-01-PLAN.md — CrimeSeverity model, incident-based FeatureCollection, severity-weighted green-to-red heatmap
 - [ ] 02.2-02-PLAN.md — Incident-based cluster layers, category icons, tap-to-detail bottom sheet
 
 ### Phase 3: School Data
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 | 1. API Caching Foundation | 2/2 | Complete   | 2026-03-24 |
 | 2. Real Crime Data | 2/2 | Complete | - |
 | 02.1. Mapbox Migration | 4/4 | Complete   | 2026-03-23 |
-| 02.2. Crime Cluster UX | 0/2 | Not started | - |
+| 02.2. Crime Cluster UX | 1/2 | In Progress|  |
 | 3. School Data | 0/TBD | Not started | - |
 | 4. Dark Mode | 0/TBD | Not started | - |
 | 5. Loading & Layer Polish | 0/TBD | Not started | - |

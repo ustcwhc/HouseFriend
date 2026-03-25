@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 | 1. API Caching Foundation | 2/2 | Complete   | 2026-03-24 |
 | 2. Real Crime Data | 2/2 | Complete | - |
 | 02.1. Mapbox Migration | 4/4 | Complete   | 2026-03-23 |
-| 02.2. Crime Cluster UX | 2/2 | Complete   | 2026-03-25 |
+| 02.2. Crime Cluster UX | 2/2 | Complete    | 2026-03-25 |
 | 3. School Data | 0/TBD | Not started | - |
 | 4. Dark Mode | 0/TBD | Not started | - |
 | 5. Loading & Layer Polish | 0/TBD | Not started | - |

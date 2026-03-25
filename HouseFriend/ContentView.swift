@@ -262,6 +262,7 @@ struct ContentView: View {
             crimeMarkers: [],
             densityGrid: crimeService.densityGrid,
             crimeHotspots: crimeService.hotspots,
+            crimeIncidents: crimeService.incidents,
             tractCrimeDensities: crimeService.tractCrimeDensities,
             censusTracts: censusTracts,
             onCameraChange: { center, zoom in

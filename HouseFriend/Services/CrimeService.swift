@@ -49,6 +49,7 @@ class CrimeService: ObservableObject {
     /// Track last fetched region to avoid redundant refetches on small pans
     private var lastFetchCenter: (lat: Double, lon: Double)?
     private var lastFetchSpan: Double = 0
+    private var activeRequestID = UUID()
 
     // MARK: - Public API
 
@@ -66,19 +67,20 @@ class CrimeService: ObservableObject {
             ResponseCache.shared.clearLayer(.crime)
         }
 
-        // Skip if already loading
-        guard !isLoading else { return }
-
-        // Only refetch when center has moved significantly (>50% of last fetch radius)
-        // Zoom changes alone don't trigger refetch — keeps heatmap stable
-        if let last = lastFetchCenter {
-            let movedLat = abs(lat - last.lat)
-            let movedLon = abs(lon - last.lon)
-            let threshold = 0.03  // ~3km — must move substantially to refetch
-            if movedLat < threshold && movedLon < threshold {
-                return
-            }
+        if let last = lastFetchCenter,
+           !shouldRefetch(
+                lat: lat,
+                lon: lon,
+                span: span,
+                lastLat: last.lat,
+                lastLon: last.lon,
+                lastSpan: lastFetchSpan
+           ) {
+            return
         }
+
+        let requestID = UUID()
+        activeRequestID = requestID
 
         let matchingEndpoints = CityEndpoint.endpointsForRegion(lat: lat, lon: lon, span: span)
 
@@ -97,7 +99,7 @@ class CrimeService: ObservableObject {
         }
 
         // Check cache first
-        let cacheKey = ResponseCache.cacheKey(layer: .crime, lat: lat, lon: lon)
+        let cacheKey = Self.cacheKey(lat: lat, lon: lon, span: span)
         if let cachedData = ResponseCache.shared.get(key: cacheKey, layer: .crime) {
             if let json = try? JSONSerialization.jsonObject(with: cachedData) as? [String: Any],
                let allIncidents = json["incidents"] as? [[[String: Any]]],
@@ -111,6 +113,7 @@ class CrimeService: ObservableObject {
                 let score = Self.densityScore(grid: grid)
                 AppLogger.network.info("Crime: loaded \(merged.count) incidents from cache")
                 DispatchQueue.main.async {
+                    guard self.activeRequestID == requestID else { return }
                     self.incidents = merged
                     self.densityGrid = grid
                     self.stats = CrimeStats(score: score, label: Self.label(score), incidentCount: merged.count)
@@ -187,11 +190,15 @@ class CrimeService: ObservableObject {
 
         group.notify(queue: .global(qos: .userInitiated)) { [weak self] in
             guard let self = self else { return }
+            guard self.activeRequestID == requestID else { return }
 
             // If no new incidents, keep existing data visible (don't blank the heatmap)
             guard !allIncidents.isEmpty else {
                 AppLogger.network.info("Crime: no incidents returned for this viewport — keeping existing data")
-                DispatchQueue.main.async { self.isLoading = false }
+                DispatchQueue.main.async {
+                    guard self.activeRequestID == requestID else { return }
+                    self.isLoading = false
+                }
                 self.lastFetchCenter = (lat: lat, lon: lon)
                 self.lastFetchSpan = span
                 return
@@ -226,6 +233,7 @@ class CrimeService: ObservableObject {
             self.lastFetchSpan = span
 
             DispatchQueue.main.async {
+                guard self.activeRequestID == requestID else { return }
                 self.incidents = allIncidents
                 self.densityGrid = grid
                 self.hotspots = spots
@@ -245,6 +253,15 @@ class CrimeService: ObservableObject {
     private static func buildURL(endpoint: CityEndpoint, lat: Double, lon: Double, since: String, span: Double) -> URL? {
         // Radius covers the viewport (span in degrees → meters, ~111km per degree)
         let radiusMeters = Int(max(span, 0.02) * 111000)
+        let limit: Int
+        switch span {
+        case ..<0.04:
+            limit = 300
+        case ..<0.10:
+            limit = 750
+        default:
+            limit = 1500
+        }
 
         var components = URLComponents(string: endpoint.baseURL)
         var queryItems: [URLQueryItem] = [
@@ -252,7 +269,7 @@ class CrimeService: ObservableObject {
                 name: "$where",
                 value: "within_circle(\(endpoint.fieldMapping.geoColumn),\(lat),\(lon),\(radiusMeters)) AND \(endpoint.fieldMapping.datetime) > '\(since)'"
             ),
-            URLQueryItem(name: "$limit", value: "200"),
+            URLQueryItem(name: "$limit", value: String(limit)),
             URLQueryItem(name: "$order", value: "\(endpoint.fieldMapping.datetime) DESC")
         ]
         if !appToken.isEmpty {
@@ -260,6 +277,31 @@ class CrimeService: ObservableObject {
         }
         components?.queryItems = queryItems
         return components?.url
+    }
+
+    private static func cacheKey(lat: Double, lon: Double, span: Double) -> String {
+        let quantizedSpan = String(format: "%.2f", span)
+        return "\(ResponseCache.cacheKey(layer: .crime, lat: lat, lon: lon))_s\(quantizedSpan)"
+    }
+
+    private func shouldRefetch(
+        lat: Double,
+        lon: Double,
+        span: Double,
+        lastLat: Double,
+        lastLon: Double,
+        lastSpan: Double
+    ) -> Bool {
+        let movedLat = abs(lat - lastLat)
+        let movedLon = abs(lon - lastLon)
+        let movementThreshold = max(0.01, min(span, max(lastSpan, 0.01)) * 0.35)
+
+        let safeLastSpan = max(lastSpan, 0.01)
+        let zoomDelta = abs(span - safeLastSpan) / safeLastSpan
+
+        return movedLat >= movementThreshold ||
+               movedLon >= movementThreshold ||
+               zoomDelta >= 0.4
     }
 
     // MARK: - Parsing

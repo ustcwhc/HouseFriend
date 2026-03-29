@@ -79,6 +79,10 @@ class CrimeService: ObservableObject {
             return
         }
 
+        // Prevent overlapping network requests — stale responses are also
+        // discarded via activeRequestID, but this avoids wasting bandwidth.
+        guard !isLoading else { return }
+
         let requestID = UUID()
         activeRequestID = requestID
 
@@ -294,6 +298,7 @@ class CrimeService: ObservableObject {
     ) -> Bool {
         let movedLat = abs(lat - lastLat)
         let movedLon = abs(lon - lastLon)
+        // Threshold = 35% of the smaller viewport span (clamped to 0.01° minimum)
         let movementThreshold = max(0.01, min(span, max(lastSpan, 0.01)) * 0.35)
 
         let safeLastSpan = max(lastSpan, 0.01)

@@ -211,7 +211,7 @@ extension HFMapView {
                 .circleStrokeColor(StyleColor(.white))
                 .circleEmissiveStrength(1.0)
 
-            // -- Cluster labels: show rounded severity_sum --
+            // -- Cluster labels: show incident count (abbreviated for large clusters) --
             SymbolLayer(id: "crime-cluster-labels", source: "crime-clusters")
                 .filter(Exp(.has) { "point_count" })
                 .textField(Exp(.coalesce) {

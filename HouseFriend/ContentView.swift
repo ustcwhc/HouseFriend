@@ -41,6 +41,7 @@ struct ContentView: View {
     @State private var categories     = NeighborhoodCategory.all
     @State private var isLoadingScores = false
     @State private var crimeDetails: [CrimeDetail] = []
+    @State private var cachedNearbyCrime: [CrimeDetail] = []
     @State private var showCrimeDetailSheet = false
     @State private var selectedSchool: School?
     @State private var selectedSuperfund: SuperfundSite?
@@ -235,6 +236,9 @@ struct ContentView: View {
         .sheet(isPresented: $showCrimeDetailSheet) {
             CrimeDetailSheet(crimes: crimeDetails)
         }
+        .onChange(of: crimeService.incidents.count) { _, _ in
+            recomputeNearbyCrime()
+        }
 
     }
 
@@ -303,6 +307,7 @@ struct ContentView: View {
             },
             onMapLongPress: { coord in
                 pinnedLocation = coord
+                recomputeNearbyCrime()
                 computeScores(coord: coord)
             },
             onClusterTap: { details in
@@ -783,7 +788,6 @@ struct ContentView: View {
             }
 
         case .crime:
-            let nearby = nearbyCrimeDetails(for: coord)
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Crime Summary").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
@@ -799,22 +803,22 @@ struct ContentView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Button {
-                    crimeDetails = nearby
+                    crimeDetails = cachedNearbyCrime
                     showCrimeDetailSheet = true
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "list.bullet.rectangle.portrait")
-                        Text(nearby.isEmpty ? "No Nearby Crime Details" : "View Nearby Crime Details")
+                        Text(cachedNearbyCrime.isEmpty ? "No Nearby Crime Details" : "View Nearby Crime Details")
                             .fontWeight(.semibold)
                     }
                     .font(.caption)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(nearby.isEmpty ? Color.secondary.opacity(0.45) : Color.red.opacity(0.85))
+                    .background(cachedNearbyCrime.isEmpty ? Color.secondary.opacity(0.45) : Color.red.opacity(0.85))
                     .cornerRadius(10)
                 }
-                .disabled(nearby.isEmpty)
+                .disabled(cachedNearbyCrime.isEmpty)
             }
             .padding(12)
             .background(Color(UIColor.secondarySystemBackground))
@@ -992,9 +996,8 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
-                guard currentCenter.latitude == center.latitude,
-                      currentCenter.longitude == center.longitude else { return }
-
+                // Debounce + CrimeService.shouldRefetch handle redundancy;
+                // no need for an exact-coordinate guard here.
                 switch selectedCategory {
                 case .noise:
                     noiseService.fetchForRegion(MKCoordinateRegion(center: center, span: spanForZoom(zoom)))
@@ -1159,6 +1162,11 @@ struct ContentView: View {
         }
     }
 
+    func recomputeNearbyCrime() {
+        guard let coord = pinnedLocation else { return }
+        cachedNearbyCrime = nearbyCrimeDetails(for: coord)
+    }
+
     func nearbyCrimeDetails(for coord: CLLocationCoordinate2D, limit: Int = 40) -> [CrimeDetail] {
         let sorted = crimeService.incidents.sorted { lhs, rhs in
             crimeDistanceScore(from: coord, to: lhs.coordinate) < crimeDistanceScore(from: coord, to: rhs.coordinate)
@@ -1168,7 +1176,7 @@ struct ContentView: View {
             CrimeDetail(
                 category: incident.category,
                 description: incident.description,
-                date: crimeDateFormatter.string(from: incident.date),
+                date: Self.crimeDateFormatter.string(from: incident.date),
                 severity: CrimeSeverity.from(category: incident.category)
             )
         }
@@ -1180,12 +1188,12 @@ struct ContentView: View {
         return lat * lat + lon * lon
     }
 
-    var crimeDateFormatter: DateFormatter {
+    private static let crimeDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter
-    }
+    }()
 
     // MARK: - Geometry Helpers
     func pointInPolygon(_ point: CLLocationCoordinate2D, polygon: [CLLocationCoordinate2D]) -> Bool {

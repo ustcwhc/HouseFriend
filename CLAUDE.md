@@ -27,6 +27,10 @@ HouseFriend is a Bay Area "Neighborhood Health Report" iOS app. It overlays 10 d
 - **Zoom tier filtering**: All annotation visibility must go through `ZoomTier` enum thresholds.
 - **Main thread = UI only**: All computation runs in `DispatchQueue.global` or `Task { }`.
 
+## Channel Reply Rule (MANDATORY)
+
+When a message originates from an external channel (Discord `<channel source="discord" ...>`, Telegram, or any MCP-bridged chat), you MUST reply exclusively through that channel's reply tool (e.g., `mcp__plugin_discord_discord__reply`). **Never** output plain text to the CLI as your response — the channel user cannot see CLI output and will be left waiting with no reply. This applies to all responses: answers, follow-up questions, status updates, errors, and confirmations. If you need to run tools (read files, edit code, run commands), do so silently, then send the final response through the channel.
+
 ## Workflow
 
 - **Branching**: Meta-style stacked diffs on main. Create a PR for each change.

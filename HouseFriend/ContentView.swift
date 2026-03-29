@@ -25,6 +25,9 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var searchResults: [MKMapItem] = []
     @StateObject private var searchCompleter = SearchCompleterService()
+    @State private var cameraFetchTask: Task<Void, Never>?
+    @State private var searchDebounceTask: Task<Void, Never>?
+    @State private var activeSearch: MKLocalSearch?
     @State private var isSearchFocused = false
     // Population / ZIP layer
     @State private var zipRegions: [ZIPCodeRegion] = ZIPCodeData.allZIPs()
@@ -38,6 +41,7 @@ struct ContentView: View {
     @State private var categories     = NeighborhoodCategory.all
     @State private var isLoadingScores = false
     @State private var crimeDetails: [CrimeDetail] = []
+    @State private var cachedNearbyCrime: [CrimeDetail] = []
     @State private var showCrimeDetailSheet = false
     @State private var selectedSchool: School?
     @State private var selectedSuperfund: SuperfundSite?
@@ -187,6 +191,10 @@ struct ContentView: View {
             loadLayerIfNeeded(.population)
             // Census tracts load lazily inside CrimeService
         }
+        .onDisappear {
+            cancelPendingViewportWork()
+            cancelSearchWork(clearResults: false)
+        }
         .onChange(of: activeServiceError) { _, error in
             if let error {
                 withAnimation { apiErrorMessage = error }
@@ -206,6 +214,10 @@ struct ContentView: View {
                                     bearing: 0, pitch: 0)
         }
         .onChange(of: selectedCategory) { _, _ in
+            cancelPendingViewportWork()
+            if selectedCategory != .noise {
+                noiseService.cancelFetch()
+            }
             // Auto-dismiss ZIP drawer when switching any layer
             if selectedZIP != nil {
                 withAnimation(.spring(response: 0.3)) {
@@ -223,6 +235,9 @@ struct ContentView: View {
         .sheet(item: $selectedHousing) { f in HousingDetailSheet(facility: f) }
         .sheet(isPresented: $showCrimeDetailSheet) {
             CrimeDetailSheet(crimes: crimeDetails)
+        }
+        .onChange(of: crimeService.incidents.count) { _, _ in
+            recomputeNearbyCrime()
         }
 
     }
@@ -250,12 +265,7 @@ struct ContentView: View {
             onCameraChange: { center, zoom in
                 currentCenter = center
                 currentSpan   = spanForZoom(zoom)
-                if selectedCategory == .noise {
-                    noiseService.fetchForRegion(MKCoordinateRegion(center: center, span: spanForZoom(zoom)))
-                }
-                if selectedCategory == .crime {
-                    refreshCrimeIncidents()
-                }
+                scheduleViewportDrivenFetch(center: center, zoom: zoom)
             },
             onSchoolTap:   { selectedSchool    = $0 },
             onSuperfundTap:{ selectedSuperfund = $0 },
@@ -297,6 +307,7 @@ struct ContentView: View {
             },
             onMapLongPress: { coord in
                 pinnedLocation = coord
+                recomputeNearbyCrime()
                 computeScores(coord: coord)
             },
             onClusterTap: { details in
@@ -345,20 +356,24 @@ struct ContentView: View {
             TextField("Search address or place...", text: $searchText)
                 .accessibilityIdentifier("searchField")
                 .autocorrectionDisabled()
-                .onSubmit { performSearch() }
+                .onSubmit { performSearch(immediate: true) }
                 .onChange(of: searchText) { _, v in
                     if v.isEmpty {
-                        searchResults = []
+                        cancelSearchWork(clearResults: true)
                         searchCompleter.clear()
                     } else {
                         // MKLocalSearchCompleter gives instant fuzzy suggestions
                         searchCompleter.search(v)
-                        // Also run full search for richer results
-                        if v.count >= 2 { performSearch() }
+                        // Full search is more expensive, so debounce it.
+                        scheduleSearch(for: v)
                     }
                 }
             if !searchText.isEmpty {
-                Button { searchText = ""; searchResults = []; searchCompleter.clear() } label: {
+                Button {
+                    cancelSearchWork(clearResults: true)
+                    searchText = ""
+                    searchCompleter.clear()
+                } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
                 }
             }
@@ -784,6 +799,26 @@ struct ContentView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                Text("Area shading shows tract-level crime severity, and the glow shows incident concentration.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Button {
+                    crimeDetails = cachedNearbyCrime
+                    showCrimeDetailSheet = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.rectangle.portrait")
+                        Text(cachedNearbyCrime.isEmpty ? "No Nearby Crime Details" : "View Nearby Crime Details")
+                            .fontWeight(.semibold)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(cachedNearbyCrime.isEmpty ? Color.secondary.opacity(0.45) : Color.red.opacity(0.85))
+                    .cornerRadius(10)
+                }
+                .disabled(cachedNearbyCrime.isEmpty)
             }
             .padding(12)
             .background(Color(UIColor.secondarySystemBackground))
@@ -947,10 +982,82 @@ struct ContentView: View {
     }
 
     // MARK: - Actions
-    func performSearch() {
-        guard !searchText.isEmpty else { return }
+    func scheduleViewportDrivenFetch(center: CLLocationCoordinate2D, zoom: Double) {
+        cameraFetchTask?.cancel()
+
+        guard selectedCategory == .crime || selectedCategory == .noise else { return }
+
+        if selectedCategory == .noise {
+            noiseService.cancelFetch()
+        }
+
+        cameraFetchTask = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                // Debounce + CrimeService.shouldRefetch handle redundancy;
+                // no need for an exact-coordinate guard here.
+                switch selectedCategory {
+                case .noise:
+                    noiseService.fetchForRegion(MKCoordinateRegion(center: center, span: spanForZoom(zoom)))
+                case .crime:
+                    refreshCrimeIncidents()
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    func cancelPendingViewportWork() {
+        cameraFetchTask?.cancel()
+        cameraFetchTask = nil
+    }
+
+    func scheduleSearch(for query: String) {
+        searchDebounceTask?.cancel()
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.count >= 2 else {
+            activeSearch?.cancel()
+            activeSearch = nil
+            searchResults = []
+            return
+        }
+
+        searchDebounceTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard searchText.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery else { return }
+                performSearch(query: trimmedQuery)
+            }
+        }
+    }
+
+    func cancelSearchWork(clearResults: Bool) {
+        searchDebounceTask?.cancel()
+        searchDebounceTask = nil
+        activeSearch?.cancel()
+        activeSearch = nil
+        if clearResults {
+            searchResults = []
+        }
+    }
+
+    func performSearch(query: String? = nil, immediate: Bool = false) {
+        let requestedQuery = (query ?? searchText).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !requestedQuery.isEmpty else { return }
+
+        if immediate {
+            searchDebounceTask?.cancel()
+        }
+
+        activeSearch?.cancel()
+
         let req = MKLocalSearch.Request()
-        req.naturalLanguageQuery = searchText
+        req.naturalLanguageQuery = requestedQuery
         // Bias results toward Bay Area
         req.region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 37.650, longitude: -122.100),
@@ -958,8 +1065,15 @@ struct ContentView: View {
         )
         req.resultTypes = [.address, .pointOfInterest]
         let search = MKLocalSearch(request: req)
+        activeSearch = search
         search.start { resp, error in
             DispatchQueue.main.async {
+                guard self.activeSearch === search else { return }
+                self.activeSearch = nil
+
+                let currentQuery = self.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard currentQuery.isEmpty || currentQuery == requestedQuery else { return }
+
                 if let error = error {
                     self.apiErrorMessage = "Search failed: \(error.localizedDescription)"
                     self.searchResults = []
@@ -971,6 +1085,7 @@ struct ContentView: View {
     }
 
     func resolveCompletion(_ completion: SearchCompletion) {
+        cancelSearchWork(clearResults: false)
         let req = MKLocalSearch.Request(completion: completion.original)
         MKLocalSearch(request: req).start { resp, error in
             DispatchQueue.main.async {
@@ -984,12 +1099,12 @@ struct ContentView: View {
     }
 
     func selectItem(_ item: MKMapItem) {
+        cancelSearchWork(clearResults: true)
         let c = item.placemark.coordinate
         pinnedLocation = c
         pinnedAddress = [item.name, item.placemark.thoroughfare, item.placemark.locality]
             .compactMap { $0 }.joined(separator: ", ")
         searchText = item.name ?? ""
-        searchResults = []
         currentCenter = c
         currentSpan = MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.03)
         mapViewport = .camera(center: c, zoom: zoomForSpan(currentSpan),
@@ -1046,6 +1161,39 @@ struct ContentView: View {
             isLoadingScores = false
         }
     }
+
+    func recomputeNearbyCrime() {
+        guard let coord = pinnedLocation else { return }
+        cachedNearbyCrime = nearbyCrimeDetails(for: coord)
+    }
+
+    func nearbyCrimeDetails(for coord: CLLocationCoordinate2D, limit: Int = 40) -> [CrimeDetail] {
+        let sorted = crimeService.incidents.sorted { lhs, rhs in
+            crimeDistanceScore(from: coord, to: lhs.coordinate) < crimeDistanceScore(from: coord, to: rhs.coordinate)
+        }
+
+        return sorted.prefix(limit).map { incident in
+            CrimeDetail(
+                category: incident.category,
+                description: incident.description,
+                date: Self.crimeDateFormatter.string(from: incident.date),
+                severity: CrimeSeverity.from(category: incident.category)
+            )
+        }
+    }
+
+    func crimeDistanceScore(from lhs: CLLocationCoordinate2D, to rhs: CLLocationCoordinate2D) -> Double {
+        let lat = lhs.latitude - rhs.latitude
+        let lon = lhs.longitude - rhs.longitude
+        return lat * lat + lon * lon
+    }
+
+    private static let crimeDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter
+    }()
 
     // MARK: - Geometry Helpers
     func pointInPolygon(_ point: CLLocationCoordinate2D, polygon: [CLLocationCoordinate2D]) -> Bool {

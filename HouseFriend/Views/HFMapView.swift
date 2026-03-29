@@ -56,6 +56,7 @@ struct HFMapView: View {
                 odorLayerContent
                 zipLayerContent
                 noiseLayerContent
+                crimeAreaContent
                 crimeHeatmapContent
                 crimeClusterContent(proxy: proxy)
                 annotationContent
@@ -102,6 +103,38 @@ struct HFMapView: View {
 extension HFMapView {
 
     @MapboxMaps.MapContentBuilder
+    var crimeAreaContent: some MapboxMaps.MapContent {
+        if selectedCategory == .crime, !tractCrimeDensities.isEmpty {
+            GeoJSONSource(id: "crime-tracts")
+                .data(.featureCollection(crimeTractFC))
+
+            FillLayer(id: "crime-tract-fill", source: "crime-tracts")
+                .fillColor(Exp(.interpolate) {
+                    Exp(.linear)
+                    Exp(.get) { "intensity" }
+                    0.0; "rgba(34,197,94,0.10)"
+                    0.20; "rgba(163,230,53,0.18)"
+                    0.40; "rgba(250,204,21,0.24)"
+                    0.60; "rgba(249,115,22,0.30)"
+                    0.80; "rgba(239,68,68,0.36)"
+                    1.0; "rgba(185,28,28,0.42)"
+                })
+                .fillOpacity(1.0)
+
+            LineLayer(id: "crime-tract-stroke", source: "crime-tracts")
+                .lineColor(Exp(.interpolate) {
+                    Exp(.linear)
+                    Exp(.get) { "intensity" }
+                    0.0; "rgba(34,197,94,0.15)"
+                    0.40; "rgba(250,204,21,0.28)"
+                    0.70; "rgba(249,115,22,0.35)"
+                    1.0; "rgba(185,28,28,0.45)"
+                })
+                .lineWidth(0.8)
+        }
+    }
+
+    @MapboxMaps.MapContentBuilder
     var crimeHeatmapContent: some MapboxMaps.MapContent {
         if selectedCategory == .crime, !crimeIncidents.isEmpty {
             GeoJSONSource(id: "crime-incidents")
@@ -113,28 +146,28 @@ extension HFMapView {
                 .heatmapWeight(Exp(.get) { "weight" })
                 .heatmapIntensity(Exp(.interpolate) {
                     Exp(.linear); Exp(.zoom)
-                    0; 0.5
-                    9; 1.5
-                    14; 2.5
+                    0; 0.35
+                    9; 1.1
+                    14; 1.8
                 })
                 .heatmapRadius(Exp(.interpolate) {
                     Exp(.linear); Exp(.zoom)
-                    0; 4
-                    9; 25
-                    14; 50
+                    0; 8
+                    9; 32
+                    14; 58
                 })
                 .heatmapColor(Exp(.interpolate) {
                     Exp(.linear)
                     Exp(.heatmapDensity)
                     0;    "rgba(0,0,0,0)"
-                    0.15; "rgba(34,197,94,0.2)"
-                    0.30; "rgba(163,230,53,0.35)"
-                    0.45; "rgba(250,204,21,0.5)"
-                    0.60; "rgba(251,146,60,0.6)"
-                    0.80; "rgba(239,68,68,0.7)"
-                    1.0;  "rgba(220,38,38,0.8)"
+                    0.12; "rgba(34,197,94,0.12)"
+                    0.26; "rgba(163,230,53,0.18)"
+                    0.42; "rgba(250,204,21,0.24)"
+                    0.58; "rgba(251,146,60,0.34)"
+                    0.78; "rgba(239,68,68,0.46)"
+                    1.0;  "rgba(127,29,29,0.58)"
                 })
-                .heatmapOpacity(0.55)
+                .heatmapOpacity(0.75)
         }
     }
 
@@ -161,11 +194,12 @@ extension HFMapView {
             crimeClusterSource
                 .data(.featureCollection(crimeIncidentFC))
 
-            // -- Clustered circles: severity-weighted color (gray -> orange -> red) --
+            // Cluster badges should communicate "how many incidents are here" first,
+            // while color still conveys weighted danger.
             CircleLayer(id: "crime-cluster-circles", source: "crime-clusters")
                 .filter(Exp(.has) { "point_count" })
                 .circleRadius(Exp(.step) {
-                    Exp(.get) { "severity_sum" }; 18; 10; 22; 30; 26; 80; 30
+                    Exp(.get) { "point_count" }; 18; 10; 22; 25; 26; 60; 30
                 })
                 .circleColor(Exp(.interpolate) {
                     Exp(.linear); Exp(.get) { "severity_sum" }
@@ -177,10 +211,13 @@ extension HFMapView {
                 .circleStrokeColor(StyleColor(.white))
                 .circleEmissiveStrength(1.0)
 
-            // -- Cluster labels: show rounded severity_sum --
+            // -- Cluster labels: show incident count (abbreviated for large clusters) --
             SymbolLayer(id: "crime-cluster-labels", source: "crime-clusters")
                 .filter(Exp(.has) { "point_count" })
-                .textField(Exp(.toString) { Exp(.round) { Exp(.get) { "severity_sum" } } })
+                .textField(Exp(.coalesce) {
+                    Exp(.get) { "point_count_abbreviated" }
+                    Exp(.toString) { Exp(.get) { "point_count" } }
+                })
                 .textSize(13.0)
                 .textColor(StyleColor(.white))
                 .textFont(["DIN Pro Bold"])
@@ -590,6 +627,15 @@ extension HFMapView {
                 "isRailway": .string(road.isRailway ? "true" : "false"),
                 "intensity": .number(intensity)
             ]
+            return f
+        })
+    }
+
+    private var crimeTractFC: FeatureCollection {
+        FeatureCollection(features: censusTracts.compactMap { tract in
+            guard let intensity = tractCrimeDensities[tract.id] else { return nil }
+            var f = Feature(geometry: .polygon(Polygon([tract.polygon])))
+            f.properties = ["intensity": .number(intensity)]
             return f
         })
     }
